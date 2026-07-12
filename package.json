@@ -1,0 +1,11 @@
+{
+  "name": "mict",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Python Coding Practice — Vercel serverless functions",
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "@supabase/supabase-js": "^2"
+  }
+}
