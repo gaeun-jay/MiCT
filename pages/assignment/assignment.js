@@ -1,111 +1,32 @@
 // ============================================================
-// Class assignment logic (Figma 1:61 / MD §10.1, §11, §12, §13)
-// - Questions blurred until Start
-// - Start -> timer runs + questions unlock
-// - Submit -> auto-grade (OX / multiple choice / fill-in),
-//   code questions go to AI-review placeholder (mock)
-// Real grading / code evaluation will move to Supabase +
-// a Vercel serverless function calling the Claude API.
+// Class 문제풀이 — Supabase 연동
+//   시작: start_assignment RPC → get_student_questions(정답 없는 문제)
+//   제출: 답안 저장 → grade_objective RPC(서버 채점) + /api/grade(코드 채점)
 // ============================================================
+
+const API_BASE =
+  location.hostname === "localhost" || location.hostname === "127.0.0.1"
+    ? "https://mi-ct.vercel.app"
+    : "";
+async function getToken() {
+  const { data: { session } } = await window.sb.auth.getSession();
+  return session?.access_token || null;
+}
 
 const params = new URLSearchParams(location.search);
 const classNo = params.get("class") || "1";
 document.getElementById("psTitle").textContent = `Assignment ${classNo}`;
 
-// ---- mock question bank (Easy) ----
-// type: ox | multiple_choice | blank | code
-const QUESTIONS = [
-  { type: "ox", question: "Python variable names are case-sensitive.", answer: "O",
-    wrong_comment: "Python treats uppercase and lowercase letters in a name as different." },
-  { type: "ox", question: "<code>print()</code> displays a value on the screen.", answer: "O",
-    wrong_comment: "print() is the standard output function." },
-  { type: "ox", question: "The integer <code>3</code> and the float <code>3.0</code> are exactly the same type.", answer: "X",
-    wrong_comment: "3 is an int and 3.0 is a float — different types." },
-  { type: "ox", question: "A line starting with <code>#</code> is a comment and is not executed.", answer: "O",
-    wrong_comment: "Everything after # on the line is a comment." },
-  { type: "ox", question: "Strings can be joined together using the <code>+</code> operator.", answer: "O",
-    wrong_comment: "Using + between strings concatenates them." },
-
-  { type: "multiple_choice", question: "Which of the following is a string (str)?",
-    choices: ["10", "3.14", '"hello"', "True"], answer: 3,
-    wrong_comment: "A value wrapped in quotes is a string." },
-  { type: "multiple_choice", question: "Which function reads input from the user?",
-    choices: ["print()", "input()", "len()", "type()"], answer: 2,
-    wrong_comment: "User input is read with the input() function." },
-  { type: "multiple_choice", question: "What does <code>type(10)</code> return?",
-    choices: ["str", "float", "int", "bool"], answer: 3,
-    wrong_comment: "The type of the integer 10 is int." },
-
-  { type: "blank", question: "The function that reads user input is <code>_____</code>.",
-    answers: ["input", "input()"], wrong_comment: "Use the input() function to read user input." },
-  { type: "blank", question: "The function that returns the length of a string is <code>_____</code>.",
-    answers: ["len", "len()"], wrong_comment: "Length is obtained with the len() function." },
-
-  { type: "code",
-    question: "Write code that prints the sum of the numbers from 1 to 10.",
-    placeholder: "# Write your code here\n",
-    max_score: 10 },
-  { type: "code",
-    question: "Write code that reads a name from the user and prints \"Hello, <name>\".",
-    placeholder: "# Write your code here\n",
-    max_score: 10 },
-];
-
 const TYPE_LABEL = { ox: "OX", multiple_choice: "Multiple Choice", blank: "Fill-in", code: "Code" };
 
+// ---- 상태 ----
+let started = false, submitted = false, difficulty = "Easy";
+let seconds = 0, timerId = null;
+let assignmentId = null, questionSetId = null;
+let questions = [];                 // get_student_questions 결과
+const questionsById = {};
+
 const qWrap = document.getElementById("questions");
-qWrap.innerHTML = QUESTIONS.map((q, i) => renderQuestion(q, i)).join("");
-document.getElementById("psCount").textContent = `${QUESTIONS.length} Questions`;
-
-function renderQuestion(q, i) {
-  const n = i + 1;
-  let body = "";
-  if (q.type === "ox") {
-    body = `<div class="ox-opts" data-role="ox">
-      <button type="button" class="ox-btn" data-v="O">O</button>
-      <button type="button" class="ox-btn" data-v="X">X</button>
-    </div>`;
-  } else if (q.type === "multiple_choice") {
-    body = `<div class="mc-opts" data-role="mc">${q.choices.map((c, ci) =>
-      `<button type="button" class="mc-opt" data-v="${ci + 1}">
-         <span class="mc-num">${ci + 1}</span><span>${c}</span>
-       </button>`).join("")}</div>`;
-  } else if (q.type === "blank") {
-    body = `<input type="text" class="blank-input" data-role="blank" placeholder="Your answer" autocomplete="off" spellcheck="false">`;
-  } else if (q.type === "code") {
-    body = `<textarea class="code-input" data-role="code" spellcheck="false" placeholder="${q.placeholder || ""}"></textarea>`;
-  }
-  return `<article class="q" data-idx="${i}" data-type="${q.type}">
-    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${TYPE_LABEL[q.type]}</span></div>
-    <p class="q-text">${q.question}</p>
-    <div class="q-body">${body}</div>
-    <div class="q-result" id="result-${i}"></div>
-  </article>`;
-}
-
-// ---- selection (OX / multiple choice) ----
-qWrap.addEventListener("click", (e) => {
-  const ox = e.target.closest(".ox-btn");
-  if (ox) {
-    ox.parentElement.querySelectorAll(".ox-btn").forEach((b) => b.classList.remove("is-sel"));
-    ox.classList.add("is-sel");
-  }
-  const mc = e.target.closest(".mc-opt");
-  if (mc) {
-    mc.parentElement.querySelectorAll(".mc-opt").forEach((b) => b.classList.remove("is-sel"));
-    mc.classList.add("is-sel");
-  }
-});
-
-// ============================================================
-// State: difficulty / start / timer / submit
-// ============================================================
-let started = false;
-let submitted = false;
-let difficulty = "Easy";
-let seconds = 0;
-let timerId = null;
-
 const startBtn = document.getElementById("startBtn");
 const submitBtn = document.getElementById("submitBtn");
 const timerEl = document.getElementById("timer");
@@ -114,7 +35,15 @@ const diffWrap = document.getElementById("diffWrap");
 const diffBtn = document.getElementById("diffBtn");
 const diffMenu = document.getElementById("diffMenu");
 const saveNote = document.getElementById("saveNote");
+const psCount = document.getElementById("psCount");
 
+// ---- 인증 가드 ----
+(async () => {
+  const { data: { session } } = await window.sb.auth.getSession();
+  if (!session) location.replace("../login/login.html");
+})();
+
+// ---- 난이도 드롭다운 ----
 diffBtn.addEventListener("click", () => {
   if (started) return;
   const open = !diffMenu.hidden;
@@ -128,114 +57,248 @@ diffMenu.addEventListener("click", (e) => {
   diffMenu.querySelectorAll("li").forEach((x) => x.classList.toggle("is-sel", x === li));
   diffBtn.innerHTML = `${difficulty} <span class="caret" aria-hidden="true"></span>`;
   diffMenu.hidden = true;
-  diffBtn.setAttribute("aria-expanded", "false");
 });
 document.addEventListener("click", (e) => {
-  if (!diffWrap.contains(e.target)) { diffMenu.hidden = true; diffBtn.setAttribute("aria-expanded", "false"); }
+  if (!diffWrap.contains(e.target)) diffMenu.hidden = true;
 });
 
-function fmt(s) {
-  const m = String(Math.floor(s / 60)).padStart(2, "0");
-  const sec = String(s % 60).padStart(2, "0");
-  return `${m}:${sec}`;
+// ---- 타이머 ----
+const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+// ---- 문제 렌더 ----
+function renderQuestion(q, i) {
+  const n = q.question_number ?? i + 1;
+  let body = "";
+  if (q.question_type === "ox") {
+    body = `<div class="ox-opts">
+      <button type="button" class="ox-btn" data-v="O">O</button>
+      <button type="button" class="ox-btn" data-v="X">X</button></div>`;
+  } else if (q.question_type === "multiple_choice") {
+    const choices = Array.isArray(q.choices) ? q.choices : [];
+    body = `<div class="mc-opts">${choices.map((c, ci) =>
+      `<button type="button" class="mc-opt" data-v="${ci + 1}">
+         <span class="mc-num">${ci + 1}</span><span>${escapeHtml(c)}</span></button>`).join("")}</div>`;
+  } else if (q.question_type === "blank") {
+    body = `<input type="text" class="blank-input" placeholder="Your answer" autocomplete="off" spellcheck="false">`;
+  } else if (q.question_type === "code") {
+    body = `<textarea class="code-input" spellcheck="false" placeholder="# Write your code here\n"></textarea>`;
+  }
+  return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
+    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${TYPE_LABEL[q.question_type] || q.question_type}</span></div>
+    <p class="q-text">${escapeHtml(q.question_text || "")}</p>
+    <div class="q-body">${body}</div>
+    <div class="q-result" id="result-${q.id}"></div>
+  </article>`;
 }
-function tick() { seconds++; timerEl.textContent = `Time ${fmt(seconds)}`; }
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
 
-startBtn.addEventListener("click", () => {
-  if (started) return;
-  started = true;
-  qWrap.classList.remove("is-locked");
-  qWrap.setAttribute("aria-hidden", "false");
-  startHint.style.display = "none";
-  diffWrap.classList.add("is-disabled");
-  startBtn.disabled = true;
-  startBtn.textContent = "In progress";
-  submitBtn.disabled = false;
-  timerId = setInterval(tick, 1000);
-  saveNote.textContent = "Auto-saved";
-  // TODO: record assignments.started_at, lock difficulty
-  console.log("[assignment] started", { classNo, difficulty });
+// 선택 인터랙션
+qWrap.addEventListener("click", (e) => {
+  const ox = e.target.closest(".ox-btn");
+  if (ox) { ox.parentElement.querySelectorAll(".ox-btn").forEach((b) => b.classList.remove("is-sel")); ox.classList.add("is-sel"); }
+  const mc = e.target.closest(".mc-opt");
+  if (mc) { mc.parentElement.querySelectorAll(".mc-opt").forEach((b) => b.classList.remove("is-sel")); mc.classList.add("is-sel"); }
 });
 
 // ============================================================
-// Submit + grading
+// 시작
 // ============================================================
-submitBtn.addEventListener("click", () => {
+startBtn.addEventListener("click", async () => {
+  if (started) return;
+  startBtn.disabled = true;
+  const orig = startBtn.textContent;
+  startBtn.textContent = "…";
+
+  try {
+    const { data: sd, error: sErr } = await window.sb.rpc("start_assignment", {
+      p_class_number: Number(classNo),
+      p_difficulty: difficulty.toLowerCase(),
+    });
+    if (sErr) {
+      const msg = /no questions/i.test(sErr.message) ? "이 난이도의 문제가 아직 등록되지 않았어요."
+        : /not available/i.test(sErr.message) ? "이 과제는 아직 공개되지 않았어요."
+        : `시작 실패: ${sErr.message}`;
+      startHint.innerHTML = `<p style="color:#b3352c">${msg}</p>`;
+      startBtn.disabled = false; startBtn.textContent = orig;
+      return;
+    }
+    assignmentId = sd.assignment_id;
+    questionSetId = sd.question_set_id;
+
+    const { data: qs, error: qErr } = await window.sb.rpc("get_student_questions", {
+      p_question_set_id: questionSetId,
+    });
+    if (qErr || !qs || !qs.length) {
+      startHint.innerHTML = `<p style="color:#b3352c">문제를 불러오지 못했습니다.</p>`;
+      startBtn.disabled = false; startBtn.textContent = orig;
+      return;
+    }
+
+    questions = qs;
+    qs.forEach((q) => { questionsById[q.id] = q; });
+    qWrap.innerHTML = qs.map(renderQuestion).join("");
+    psCount.textContent = `${qs.length} Questions`;
+
+    started = true;
+    qWrap.classList.remove("is-locked");
+    qWrap.setAttribute("aria-hidden", "false");
+    startHint.style.display = "none";
+    diffWrap.classList.add("is-disabled");
+    startBtn.textContent = "In progress";
+    submitBtn.disabled = false;
+    timerId = setInterval(() => { seconds++; timerEl.textContent = `Time ${fmt(seconds)}`; }, 1000);
+    saveNote.textContent = "진행 중";
+  } catch (err) {
+    console.error(err);
+    startHint.innerHTML = `<p style="color:#b3352c">오류: ${err.message}</p>`;
+    startBtn.disabled = false; startBtn.textContent = orig;
+  }
+});
+
+// ============================================================
+// 답안 수집
+// ============================================================
+function collectAnswers() {
+  const rows = [];
+  document.querySelectorAll(".q").forEach((qEl) => {
+    const qid = qEl.dataset.qid;
+    const type = qEl.dataset.type;
+    const row = { assignment_id: assignmentId, question_id: qid, answer_text: null, selected_choice: null };
+    if (type === "ox") {
+      const sel = qEl.querySelector(".ox-btn.is-sel");
+      row.answer_text = sel ? sel.dataset.v : null;
+    } else if (type === "multiple_choice") {
+      const sel = qEl.querySelector(".mc-opt.is-sel");
+      row.selected_choice = sel ? Number(sel.dataset.v) : null;
+    } else if (type === "blank") {
+      row.answer_text = qEl.querySelector(".blank-input")?.value?.trim() || null;
+    } else if (type === "code") {
+      row.answer_text = qEl.querySelector(".code-input")?.value || null;
+    }
+    rows.push(row);
+  });
+  return rows;
+}
+
+// ============================================================
+// 제출 + 채점
+// ============================================================
+submitBtn.addEventListener("click", async () => {
   if (!started || submitted) return;
   if (!confirm("Submit your answers? You won't be able to edit them afterwards.")) return;
 
   submitted = true;
   clearInterval(timerId);
   submitBtn.disabled = true;
-  submitBtn.textContent = "Submitted";
+  submitBtn.textContent = "채점 중…";
+  // 입력 잠금
+  document.querySelectorAll(".q button, .q input, .q textarea").forEach((el) => (el.disabled = true));
 
-  let correct = 0, objectiveTotal = 0;
+  try {
+    // 1) 답안 저장
+    const rows = collectAnswers();
+    const { error: upErr } = await window.sb.from("answers")
+      .upsert(rows, { onConflict: "assignment_id,question_id" });
+    if (upErr) throw upErr;
 
-  document.querySelectorAll(".q").forEach((qEl) => {
-    const idx = Number(qEl.dataset.idx);
-    const q = QUESTIONS[idx];
-    const resultEl = document.getElementById(`result-${idx}`);
-
-    if (q.type === "ox") {
-      objectiveTotal++;
-      const sel = qEl.querySelector(".ox-btn.is-sel");
-      const val = sel ? sel.dataset.v : null;
-      const ok = val === q.answer;
-      if (ok) correct++;
-      showResult(resultEl, qEl, ok, ok ? "Correct" : `Incorrect — the answer is <b>${q.answer}</b>. ${q.wrong_comment}`);
-    }
-    else if (q.type === "multiple_choice") {
-      objectiveTotal++;
-      const sel = qEl.querySelector(".mc-opt.is-sel");
-      const val = sel ? Number(sel.dataset.v) : null;
-      const ok = val === q.answer;
-      if (ok) correct++;
-      showResult(resultEl, qEl, ok, ok ? "Correct"
-        : `Incorrect — the answer is <b>#${q.answer}</b> (${q.choices[q.answer - 1]}). ${q.wrong_comment}`);
-    }
-    else if (q.type === "blank") {
-      objectiveTotal++;
-      const input = qEl.querySelector(".blank-input");
-      const val = (input.value || "").trim().toLowerCase();
-      const ok = q.answers.some((a) => a.toLowerCase() === val);
-      if (ok) correct++;
-      showResult(resultEl, qEl, ok, ok ? "Correct"
-        : `Incorrect — accepted answer: <b>${q.answers[0]}</b>. ${q.wrong_comment}`);
-      input.disabled = true;
-    }
-    else if (q.type === "code") {
-      // Code is not executed; it is evaluated by the Claude API -> pending (mock)
-      const ta = qEl.querySelector(".code-input");
-      ta.disabled = true;
-      const hasCode = ta.value.trim().length > 0;
-      resultEl.className = "q-result show q-result--review";
-      resultEl.innerHTML = hasCode
-        ? `<p class="r-title">⏳ Awaiting code evaluation</p>
-           <p class="r-comment">Code questions are evaluated by Claude AI after submission (integration pending). The score and comment will appear here once evaluated.</p>`
-        : `<p class="r-title">Not answered</p><p class="r-comment">No code was written, so it can't be evaluated.</p>`;
-    }
-
-    qEl.querySelectorAll("button, input, textarea").forEach((el) => {
-      if (el.dataset.role || el.classList.contains("ox-btn") || el.classList.contains("mc-opt")) el.disabled = true;
+    // 2) 서버 자동채점 (OX/객관식/빈칸)
+    const { data: obj, error: gErr } = await window.sb.rpc("grade_objective", {
+      p_assignment_id: assignmentId, p_duration: seconds,
     });
-  });
+    if (gErr) throw gErr;
+    renderObjectiveResults(obj);
 
-  const pct = objectiveTotal ? Math.round((correct / objectiveTotal) * 100) : 0;
-  const banner = document.createElement("div");
-  banner.className = "ps-summary";
-  banner.innerHTML = `<h3>Results</h3>
-    <p>Auto-graded (OX · Multiple Choice · Fill-in): <span class="s-score">${correct} / ${objectiveTotal}</span> correct (${pct}%) · Time ${fmt(seconds)}</p>
-    <p>The 2 code questions will be added to your final score after AI evaluation.</p>`;
-  qWrap.prepend(banner);
-  qWrap.scrollIntoView({ behavior: "smooth" });
-  saveNote.textContent = "Submitted";
+    // 3) 코드 문제 Claude 채점 (서버리스)
+    const hasCode = questions.some((q) => q.question_type === "code");
+    if (hasCode) {
+      markCodePending();
+      const token = await getToken();
+      const resp = await fetch(`${API_BASE}/api/grade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ assignment_id: assignmentId }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok) renderCodeResults(data.results || []);
+      else markCodeError(data.error || `HTTP ${resp.status}`);
+    }
 
-  // TODO: save answers/score/duration to Supabase; request Claude evaluation for code questions
-  console.log("[assignment] submitted", { correct, objectiveTotal, seconds });
+    showSummary(obj);
+    submitBtn.textContent = "제출 완료";
+    saveNote.textContent = "제출 완료";
+  } catch (err) {
+    console.error(err);
+    submitBtn.textContent = "제출 실패";
+    alert("제출/채점 중 오류: " + (err.message || err));
+  }
 });
 
-function showResult(el, qEl, ok, html) {
-  el.className = `q-result show ${ok ? "q-result--ok" : "q-result--wrong"}`;
-  qEl.classList.add(ok ? "graded-ok" : "graded-wrong");
-  el.innerHTML = `<p class="r-title">${ok ? "✓ Correct" : "✗ Incorrect"}</p><p class="r-comment">${html}</p>`;
+// ---- 결과 렌더 ----
+function correctText(r) {
+  const q = questionsById[r.question_id] || {};
+  const c = r.correct;
+  if (r.type === "ox") return `<b>${c}</b>`;
+  if (r.type === "multiple_choice") {
+    const choices = Array.isArray(q.choices) ? q.choices : [];
+    const n = Number(c);
+    return `<b>${n}번</b>${choices[n - 1] ? ` (${escapeHtml(choices[n - 1])})` : ""}`;
+  }
+  if (r.type === "blank") return `<b>${escapeHtml(Array.isArray(c) ? c[0] : c)}</b>`;
+  return "-";
+}
+function renderObjectiveResults(obj) {
+  (obj.results || []).forEach((r) => {
+    const el = document.getElementById(`result-${r.question_id}`);
+    if (!el) return;
+    const qEl = el.closest(".q");
+    if (r.is_correct) {
+      el.className = "q-result show q-result--ok";
+      qEl?.classList.add("graded-ok");
+      el.innerHTML = `<p class="r-title">✓ Correct</p>`;
+    } else {
+      el.className = "q-result show q-result--wrong";
+      qEl?.classList.add("graded-wrong");
+      el.innerHTML = `<p class="r-title">✗ Incorrect</p><p class="r-comment">정답: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
+    }
+  });
+}
+function markCodePending() {
+  questions.filter((q) => q.question_type === "code").forEach((q) => {
+    const el = document.getElementById(`result-${q.id}`);
+    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">⏳ AI 채점 중…</p>`; }
+  });
+}
+function markCodeError(msg) {
+  questions.filter((q) => q.question_type === "code").forEach((q) => {
+    const el = document.getElementById(`result-${q.id}`);
+    if (el) el.innerHTML = `<p class="r-title">코드 채점 오류</p><p class="r-comment">${escapeHtml(msg)}</p>`;
+  });
+}
+function renderCodeResults(results) {
+  const STATUS = { correct: "정답으로 판단", needs_revision: "수정 필요", manual_review: "관리자 검토 필요" };
+  const CLS = { correct: "q-result--ok", needs_revision: "q-result--revise", manual_review: "q-result--review" };
+  results.forEach((r) => {
+    const el = document.getElementById(`result-${r.question_id}`);
+    if (!el) return;
+    el.className = `q-result show ${CLS[r.status] || "q-result--review"}`;
+    const strengths = (r.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+    const issues = (r.issues || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+    el.innerHTML =
+      `<p class="r-title">${STATUS[r.status] || r.status} · ${r.score}점</p>
+       <p class="r-comment">${escapeHtml(r.comment || "")}</p>
+       ${strengths ? `<p class="r-comment"><b>잘한 점</b><ul>${strengths}</ul></p>` : ""}
+       ${issues ? `<p class="r-comment"><b>수정할 점</b><ul>${issues}</ul></p>` : ""}`;
+  });
+}
+function showSummary(obj) {
+  const banner = document.createElement("div");
+  banner.className = "ps-summary";
+  const pct = obj.objective_total ? Math.round((obj.objective_correct / obj.objective_total) * 100) : 0;
+  banner.innerHTML = `<h3>채점 결과</h3>
+    <p>자동 채점 <span class="s-score">${obj.objective_correct} / ${obj.objective_total}</span> 정답 (${pct}%) · 풀이 시간 ${fmt(seconds)}</p>
+    <p>코드 문제는 AI 평가 결과가 각 문제 아래에 표시됩니다.</p>`;
+  qWrap.prepend(banner);
+  qWrap.scrollIntoView({ behavior: "smooth" });
 }
