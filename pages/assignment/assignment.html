@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assignment | Python Coding Practice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../design-system.css">
+<link rel="stylesheet" href="assignment.css">
+</head>
+<body>
+
+  <main class="ps-wrap">
+    <section class="ps-card glass-card">
+
+      <!-- 고정 상단바 -->
+      <header class="ps-topbar">
+        <div class="ps-topbar-left">
+          <div class="pill pill--time" id="timer">Time 00:00</div>
+          <div class="pill pill--time" id="psCount">Questions</div>
+        </div>
+
+        <h1 class="ps-title" id="psTitle">Assignment 1</h1>
+
+        <div class="ps-actions">
+          <div class="ps-diff" id="diffWrap">
+            <button type="button" class="pill pill--diff" id="diffBtn" aria-haspopup="listbox" aria-expanded="false">
+              Easy <span class="caret" aria-hidden="true"></span>
+            </button>
+            <ul class="ps-diff-menu" id="diffMenu" role="listbox" hidden>
+              <li role="option" data-v="Easy" class="is-sel">Easy</li>
+              <li role="option" data-v="Medium">Medium</li>
+              <li role="option" data-v="Hard">Hard</li>
+            </ul>
+          </div>
+
+          <button type="button" class="pill pill--start" id="startBtn">Start</button>
+        </div>
+      </header>
+
+      <!-- 스크롤 문제 영역 -->
+      <div class="ps-scroll" id="psScroll">
+        <div class="ps-starthint" id="startHint">
+          <p>Press <b>Start</b> to begin the timer and unlock the questions.</p>
+          <p class="ps-startsub">You can change the difficulty (Easy · Medium · Hard) before starting. It's locked once you start.</p>
+        </div>
+        <div class="ps-questions is-locked" id="questions" aria-hidden="true"></div>
+      </div>
+
+      <!-- 고정 하단 -->
+      <footer class="ps-bottom">
+        <span class="ps-savenote" id="saveNote"></span>
+        <button type="button" class="pill pill--submit" id="submitBtn" disabled>Submit</button>
+      </footer>
+
+    </section>
+
+    <a class="ps-back" href="../home/home.html">← Home</a>
+  </main>
+
+  <script src="assignment.js"></script>
+</body>
+</html>

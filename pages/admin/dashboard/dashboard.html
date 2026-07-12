@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>관리자 대시보드 · Python 과제 관리 시스템</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../admin.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <div class="admin-layout">
+      <!-- Sidebar -->
+      <div class="sidebar-backdrop" id="backdrop"></div>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <div class="logo">Py</div>
+          <div class="brand-text">
+            <b>과제 관리 시스템</b>
+            <span>관리자 콘솔</span>
+          </div>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-tab="students">
+            <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> 학생 관리
+          </button>
+          <button class="nav-item" data-tab="problems">
+            <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span> 문제 관리
+          </button>
+          <button class="nav-item" data-tab="status">
+            <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></span> 학생 학습 현황
+          </button>
+          <button class="nav-item" data-tab="report">
+            <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span> 성장 분석 리포트
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          v0.1 프로토타입<br />mict2026@gmail.com
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <div class="main">
+        <header class="topbar">
+          <div style="display: flex; align-items: center; gap: 12px">
+            <button class="mobile-nav-toggle" id="navToggle" aria-label="메뉴"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+            <h1 id="pageTitle">학생 관리</h1>
+          </div>
+          <div class="user">
+            <span id="adminName">관리자</span>
+            <div class="avatar">A</div>
+            <button class="btn btn-sm" id="logoutBtn">로그아웃</button>
+          </div>
+        </header>
+
+        <div class="content">
+          <!-- ============ (A) 학생 관리 ============ -->
+          <section class="tab-panel active" id="tab-students">
+            <div class="section">
+              <h2 class="section-title">학생 계정 관리</h2>
+              <p class="section-desc">
+                학생 계정을 생성·수정하고 활성 상태와 임시 비밀번호를 관리합니다.
+              </p>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <h2>학생 목록</h2>
+                <div class="toolbar">
+                  <button class="btn" id="btnCreateSingle">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    단일 계정 생성
+                  </button>
+                  <label class="btn file-btn">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    다중 계정 생성
+                    <input type="file" id="csvUpload" accept=".csv" />
+                  </label>
+                  <button class="btn btn-primary" id="btnDownloadCsv">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    학생 목록 CSV 다운로드
+                  </button>
+                </div>
+              </div>
+              <div class="card-body" style="padding: 0">
+                <div class="table-wrap">
+                  <table class="data" id="studentTable">
+                    <thead>
+                      <tr>
+                        <th>학생 아이디</th>
+                        <th>이름</th>
+                        <th>나이</th>
+                        <th>비밀번호 변경 필요</th>
+                        <th>마지막 로그인 일시</th>
+                      </tr>
+                    </thead>
+                    <tbody id="studentTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ (A-2) 문제 관리 ============ -->
+          <section class="tab-panel" id="tab-problems">
+            <div class="section">
+              <h2 class="section-title">문제 관리</h2>
+              <p class="section-desc">
+                Class별 문제 Markdown 파일을 업로드하면 해당 파일 기준으로 문제가 등록됩니다.
+                아직 업로드되지 않은 Class는 학생 화면에서 <b>Locked</b>로 표시됩니다.
+              </p>
+            </div>
+
+            <div class="note section">
+              <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              <span>
+                문제는 자동 생성하지 않습니다. 관리자가 작성한 Markdown(<code>Class1_Questions.md</code> 형식)을
+                업로드하면 파일 내용을 그대로 파싱해 문제 데이터로 등록합니다.
+              </span>
+            </div>
+
+            <div class="problem-grid section" id="problemGrid"></div>
+
+            <div class="card" id="previewCard" style="display: none">
+              <div class="card-head">
+                <h2 id="previewTitle">미리보기</h2>
+                <span class="sub" id="previewSub"></span>
+              </div>
+              <div class="card-body" style="padding: 0">
+                <div class="table-wrap">
+                  <table class="data">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>난이도</th>
+                        <th>유형</th>
+                        <th>문제</th>
+                        <th>정답</th>
+                      </tr>
+                    </thead>
+                    <tbody id="previewTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ (B) 학생 학습 현황 ============ -->
+          <section class="tab-panel" id="tab-status">
+            <div class="section">
+              <h2 class="section-title">학생 학습 현황</h2>
+              <p class="section-desc">
+                반별 실시간 학습 통계와 제출 현황을 확인합니다.
+              </p>
+              <div class="pill-tabs" id="classTabs">
+                <button class="pill-tab active" data-class="Class 1">Class 1</button>
+                <button class="pill-tab" data-class="Class 2">Class 2</button>
+                <button class="pill-tab" data-class="Class 3">Class 3</button>
+                <button class="pill-tab" data-class="Class 4">Class 4</button>
+                <button class="pill-tab" data-class="Class 5">Class 5</button>
+                <button class="pill-tab" data-class="Bonus">Bonus</button>
+              </div>
+            </div>
+
+            <!-- Stat tiles -->
+            <div class="stat-grid section" id="statGrid"></div>
+
+            <!-- Progress -->
+            <div class="card section">
+              <div class="card-head">
+                <h2>전체 완료 진행률</h2>
+                <span class="sub" id="progressLabel"></span>
+              </div>
+              <div class="card-body">
+                <div class="progress-outer">
+                  <div class="progress-inner" id="progressBar" style="width: 0%">
+                    0%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="chart-grid section">
+              <div class="card">
+                <div class="card-head"><h2>난이도 선택 비율</h2></div>
+                <div class="card-body">
+                  <div class="chart-box">
+                    <canvas id="chartDifficulty"></canvas>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-head"><h2>점수 분포</h2></div>
+                <div class="card-body">
+                  <div class="chart-box">
+                    <canvas id="chartScores"></canvas>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-head"><h2>요일별 제출 추이</h2></div>
+                <div class="card-body">
+                  <div class="chart-box">
+                    <canvas id="chartTrend"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Student status table -->
+            <div class="card">
+              <div class="card-head">
+                <h2>학생 제출 현황</h2>
+                <span class="sub" id="statusClassLabel"></span>
+              </div>
+              <div class="card-body" style="padding: 0">
+                <div class="table-wrap">
+                  <table class="data">
+                    <thead>
+                      <tr>
+                        <th>학생 아이디</th>
+                        <th>이름</th>
+                        <th>난이도</th>
+                        <th>완료 여부</th>
+                        <th>점수</th>
+                        <th>풀이 시간</th>
+                        <th>제출 시간</th>
+                      </tr>
+                    </thead>
+                    <tbody id="statusTbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ (C) 성장 분석 리포트 ============ -->
+          <section class="tab-panel" id="tab-report">
+            <div class="section">
+              <h2 class="section-title">성장 분석 리포트 생성</h2>
+              <p class="section-desc">
+                선택한 학생들의 학습 데이터를 Markdown 리포트로 내보냅니다.
+              </p>
+            </div>
+
+            <div class="note section">
+              <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              <span>
+                이 기능은 <b>AI를 호출하지 않습니다.</b> 선택한 학생들의 제출
+                데이터를 그대로 수집해 Markdown 문서로 정리·다운로드할 뿐입니다.
+                생성된 Markdown은 이후 별도의 AI 분석 도구 입력값으로 활용할 수
+                있습니다.
+              </span>
+            </div>
+
+            <div class="grid-2">
+              <div class="card">
+                <div class="card-head">
+                  <h2>학생 선택</h2>
+                  <label class="muted" style="font-size: 12px">
+                    <input type="checkbox" id="selectAll" /> 전체 선택
+                  </label>
+                </div>
+                <div class="card-body">
+                  <div class="select-list" id="reportList"></div>
+                  <button
+                    class="btn btn-primary btn-block"
+                    id="btnGenerateMd"
+                    style="margin-top: 16px"
+                  >
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Markdown 생성 및 다운로드
+                  </button>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <h2>미리보기</h2>
+                  <span class="sub">생성된 Markdown</span>
+                </div>
+                <div class="card-body">
+                  <textarea
+                    class="md-preview"
+                    id="mdPreview"
+                    placeholder="왼쪽에서 학생을 선택한 뒤 'Markdown 생성 및 다운로드'를 누르면 여기에 미리보기가 표시됩니다."
+                    readonly
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../../../supabase-config.js"></script>
+    <script src="dashboard.js?v=2"></script>
+  </body>
+</html>

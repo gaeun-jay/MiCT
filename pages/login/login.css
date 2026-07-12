@@ -1,0 +1,19 @@
+/* ============================================================
+   Login — page-specific layout.
+   Shared tokens/components live in ../../design-system.css
+   ============================================================ */
+
+.login-card {
+  width: min(92vw, 720px);
+  padding: clamp(28px, 4.5vw, 52px) clamp(20px, 3.2vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(22px, 3vw, 38px);
+}
+
+.login-error { margin: -8px 4px 0; }
+
+@media (max-width: 460px) {
+  .field-label { width: 52px; }
+  .field-input { padding-right: 52px; }
+}

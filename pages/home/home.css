@@ -1,0 +1,150 @@
+/* ============================================================
+   Home — 과제 카드 갤러리 (Figma 1:2 / 완료 상태 = Home_2)
+   ============================================================ */
+
+.home-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 16px clamp(16px, 3vw, 40px);
+}
+
+.home-chip {
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.30);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--white);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.home-logout {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 8px 6px;
+}
+.home-logout:hover { color: var(--green); }
+
+.home-main {
+  max-width: min(94vw, 1720px);
+  margin: 0 auto;
+  padding: clamp(8px, 2vw, 24px) clamp(16px, 3vw, 48px) 80px;
+}
+
+.home-title {
+  margin: clamp(12px, 2.5vw, 36px) 0 clamp(32px, 5.5vw, 88px);
+  text-align: center;
+  font-weight: 900;
+  font-size: clamp(30px, 6vw, 84px);
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-shadow: 0 2px 24px rgba(255, 255, 255, 0.55);
+}
+
+/* ---------- Grid ---------- */
+
+.asn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(16px, 2vw, 36px);
+}
+
+@media (max-width: 860px) { .asn-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .asn-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Card ---------- */
+
+.asn-card {
+  position: relative;
+  min-height: clamp(210px, 17vw, 340px);
+  padding: clamp(20px, 2.4vw, 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--white);
+  transition: transform .16s ease, box-shadow .16s ease, background .2s ease, border-color .2s ease;
+}
+.asn-card:hover { transform: translateY(-4px); background: var(--card-bg-hover); box-shadow: 0 30px 66px rgba(0,0,0,.42); }
+.asn-card:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+
+.asn-title {
+  margin: 0;
+  font-weight: 900;
+  font-size: clamp(24px, 2.5vw, 46px);
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  white-space: nowrap;   /* "Assignment N" 항상 한 줄 유지 */
+}
+
+.asn-concepts {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-weight: 500;
+  font-size: clamp(14px, 1.5vw, 25px);
+  color: rgba(255, 255, 255, 0.92);
+}
+.asn-concepts li::before { content: "· "; }
+
+.asn-card--bonus .asn-title { font-size: clamp(26px, 2.9vw, 44px); line-height: 1.1; }
+
+/* ---------- Status badge (top-right) ---------- */
+
+.asn-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+.asn-badge--done { background: rgba(0,0,0,0.35); color: var(--green); border-color: var(--green-line); }
+.asn-badge--progress { background: rgba(0,0,0,0.30); color: #ffe58a; border-color: rgba(255,210,30,.5); }
+.asn-badge--todo { background: rgba(0,0,0,0.25); color: rgba(255,255,255,.75); border-color: rgba(255,255,255,.3); }
+.asn-badge--locked { background: rgba(0,0,0,0.35); color: rgba(255,255,255,.6); border-color: rgba(255,255,255,.25); }
+
+/* ---------- Meta row ---------- */
+
+.asn-meta {
+  margin-top: 6px;
+  font-weight: 500;
+  font-size: clamp(12px, 1.2vw, 15px);
+  color: rgba(255, 255, 255, 0.85);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: center;
+}
+.asn-meta b { font-weight: 700; color: var(--white); }
+
+/* ---------- Completed = neon green (Home_2) ---------- */
+
+.asn-card--done {
+  background: var(--green-glass);
+  border-color: var(--green-line);
+  box-shadow: 0 4px 4px rgba(0,0,0,.25), 0 0 40px rgba(0,255,72,.20), 0 24px 60px rgba(0,0,0,.35);
+}
+.asn-card--done:hover { background: var(--green-glass-hover); box-shadow: 0 0 54px rgba(0,255,72,.32), 0 30px 66px rgba(0,0,0,.42); }
+.asn-card--done .asn-title { text-shadow: 0 0 18px rgba(0,255,72,.55); }
+
+/* ---------- Locked (미공개) ---------- */
+.asn-card--locked { opacity: 0.6; cursor: not-allowed; }
+.asn-card--locked:hover { transform: none; box-shadow: var(--card-shadow); background: var(--card-bg); }

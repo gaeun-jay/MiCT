@@ -1,0 +1,15 @@
+# dependencies / build
+node_modules/
+
+# secrets — 절대 커밋 금지 (service_role, Anthropic 키 등은 Vercel 환경변수에만)
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log

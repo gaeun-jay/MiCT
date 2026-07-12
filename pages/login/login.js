@@ -1,0 +1,100 @@
+// ============================================================
+// Login — Python Coding Practice
+// Password visibility toggle + form submit stub.
+// (Supabase Auth 연동은 이후 단계에서 붙입니다.)
+// ============================================================
+
+const form = document.getElementById("loginForm");
+const idInput = document.getElementById("studentId");
+const pwInput = document.getElementById("password");
+const pwToggle = document.getElementById("pwToggle");
+const loginBtn = document.getElementById("loginBtn");
+const errorBox = document.getElementById("loginError");
+
+// ---- Password show / hide ----
+pwToggle.addEventListener("click", () => {
+  const shown = pwInput.type === "text";
+  pwInput.type = shown ? "password" : "text";
+  pwToggle.setAttribute("aria-pressed", String(!shown));
+  pwToggle.setAttribute("aria-label", shown ? "Show password" : "Hide password");
+  pwInput.focus({ preventScroll: true });
+});
+
+// ---- Helpers ----
+function showError(message) {
+  errorBox.textContent = message;
+  errorBox.hidden = false;
+}
+function clearError() {
+  errorBox.hidden = true;
+  errorBox.textContent = "";
+}
+
+[idInput, pwInput].forEach((el) => el.addEventListener("input", clearError));
+
+// ---- Submit (stub) ----
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearError();
+
+  const studentId = idInput.value.trim();
+  const password = pwInput.value;
+
+  if (!studentId) {
+    showError("Please enter your ID.");
+    idInput.focus();
+    return;
+  }
+  if (!password) {
+    showError("Please enter your password.");
+    pwInput.focus();
+    return;
+  }
+
+  loginBtn.disabled = true;
+  const original = loginBtn.textContent;
+  loginBtn.textContent = "…";
+
+  try {
+    // 1) Student001 -> student001@pythonclass.local
+    const email = window.idToEmail(studentId);
+
+    // 2) Supabase Auth 로그인
+    const { data, error } = await window.sb.auth.signInWithPassword({ email, password });
+    if (error) {
+      showError("Login failed. Check your ID and password.");
+      loginBtn.disabled = false;
+      loginBtn.textContent = original;
+      return;
+    }
+
+    // 3) 학생 정보 조회 (본인 행만 RLS 허용) → 이름/비번변경 여부
+    const { data: student } = await window.sb
+      .from("students")
+      .select("student_code, name, must_change_password, is_active")
+      .eq("auth_user_id", data.user.id)
+      .single();
+
+    if (student && student.is_active === false) {
+      await window.sb.auth.signOut();
+      showError("This account is deactivated. Please contact your administrator.");
+      loginBtn.disabled = false;
+      loginBtn.textContent = original;
+      return;
+    }
+
+    // 표시용 정보 저장
+    localStorage.setItem("studentId", student?.student_code || studentId);
+    if (student?.name) localStorage.setItem("studentName", student.name);
+
+    // 4) 첫 로그인이면 비밀번호 변경, 아니면 홈
+    window.location.href = student?.must_change_password
+      ? "../change-password/change-password.html"
+      : "../home/home.html";
+  } catch (err) {
+    console.error(err);
+    showError("Login failed. Please try again.");
+    loginBtn.disabled = false;
+    loginBtn.textContent = original;
+  }
+});

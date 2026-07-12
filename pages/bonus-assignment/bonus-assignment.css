@@ -1,0 +1,29 @@
+/* ============================================================
+   Bonus 문제풀이 — assignment.css 재사용 + 선긋기(matching) 스타일
+   ============================================================ */
+
+/* 선긋기: 왼쪽 용어 - 오른쪽 설명 연결 (select 방식) */
+.match-grid { display: flex; flex-direction: column; gap: 10px; }
+.match-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(160px, 1.4fr);
+  align-items: center;
+  gap: 12px;
+}
+.match-term {
+  padding: 12px 14px; border-radius: 12px; border: 1.5px solid #e0e3e8; background: #fff;
+  font-family: "JetBrains Mono", monospace; font-weight: 600; color: #16181c; font-size: .95rem;
+}
+.match-link { color: #b6bcc4; font-size: 1.2rem; text-align: center; }
+.match-select {
+  width: 100%; height: 46px; padding: 0 12px; border-radius: 10px;
+  border: 1.5px solid #d5d9df; background: #fff; color: #16181c; font-size: .95rem; cursor: pointer; outline: none;
+}
+.match-select:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+.match-row.row-ok .match-select { border-color: #16a34a; background: #eafaf0; }
+.match-row.row-wrong .match-select { border-color: #e0655c; background: #fdeceb; }
+
+@media (max-width: 560px) {
+  .match-row { grid-template-columns: 1fr; }
+  .match-link { display: none; }
+}
