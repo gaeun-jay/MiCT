@@ -22,6 +22,8 @@ import { createClient } from "@supabase/supabase-js";
 
 const DIFF_MAP = { easy: "easy", medium: "medium", hard: "hard" };
 const ALLOWED_TYPES = new Set(["ox", "multiple_choice", "blank", "code", "matching"]);
+// 유형별 배점 (10 OX + 5 객관식 + 3 빈칸 + 2 코드 = 100점)
+const TYPE_POINTS = { ox: 1, multiple_choice: 2, blank: 10, code: 25, matching: 1 };
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -134,7 +136,7 @@ export default async function handler(req, res) {
         concept: q.concept ?? (Array.isArray(q.concepts) ? q.concepts.join(",") : null),
         requirements: q.requirements ?? null,
         rubric: q.rubric ?? null,
-        max_score: q.type === "code" ? (parseInt(q.max_score, 10) || 10) : 1,
+        max_score: TYPE_POINTS[q.type] ?? 1,
       }));
 
       const { error: qErr } = await admin.from("questions").insert(rows);

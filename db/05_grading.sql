@@ -79,6 +79,9 @@ declare
   v_correct boolean;
   v_obj_total int := 0;
   v_obj_correct int := 0;
+  v_obj_points int := 0;   -- 획득 점수
+  v_obj_max int := 0;      -- 객관식 만점 합
+  v_pts int;
   v_has_code boolean;
   v_results jsonb := '[]'::jsonb;
 begin
@@ -91,7 +94,7 @@ begin
 
   for r in
     select q.id as question_id, q.question_number, q.question_type,
-           q.correct_answers, q.wrong_comment, q.choices,
+           q.correct_answers, q.wrong_comment, q.choices, q.max_score,
            ans.id as answer_id, ans.answer_text, ans.selected_choice
     from public.questions q
     left join public.answers ans
@@ -118,15 +121,20 @@ begin
       );
     end if;
 
-    if v_correct then v_obj_correct := v_obj_correct + 1; end if;
+    v_obj_max := v_obj_max + coalesce(r.max_score, 1);
+    v_pts := case when v_correct then coalesce(r.max_score, 1) else 0 end;
+    if v_correct then
+      v_obj_correct := v_obj_correct + 1;
+      v_obj_points := v_obj_points + v_pts;
+    end if;
 
     if r.answer_id is not null then
       update public.answers
-        set is_correct = v_correct, score = case when v_correct then 1 else 0 end, updated_at = now()
+        set is_correct = v_correct, score = v_pts, updated_at = now()
        where id = r.answer_id;
     else
       insert into public.answers (assignment_id, question_id, is_correct, score)
-       values (p_assignment_id, r.question_id, v_correct, case when v_correct then 1 else 0 end);
+       values (p_assignment_id, r.question_id, v_correct, v_pts);
     end if;
 
     v_results := v_results || jsonb_build_object(
@@ -146,10 +154,10 @@ begin
   ) into v_has_code;
 
   update public.assignments
-    set status = case when v_has_code then 'submitted' else 'graded' end,
+    set status = (case when v_has_code then 'submitted' else 'graded' end)::assignment_status,
         submitted_at = now(),
-        objective_score = v_obj_correct,
-        total_score = case when v_has_code then total_score else v_obj_correct end,
+        objective_score = v_obj_points,
+        total_score = case when v_has_code then total_score else v_obj_points end,
         graded_at = case when v_has_code then graded_at else now() end,
         total_duration_seconds = coalesce(p_duration, total_duration_seconds),
         updated_at = now()
@@ -158,6 +166,8 @@ begin
   return jsonb_build_object(
     'objective_total', v_obj_total,
     'objective_correct', v_obj_correct,
+    'objective_points', v_obj_points,
+    'objective_max', v_obj_max,
     'results', v_results
   );
 end $$;

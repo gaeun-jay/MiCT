@@ -117,9 +117,9 @@ startBtn.addEventListener("click", async () => {
       p_difficulty: difficulty.toLowerCase(),
     });
     if (sErr) {
-      const msg = /no questions/i.test(sErr.message) ? "이 난이도의 문제가 아직 등록되지 않았어요."
-        : /not available/i.test(sErr.message) ? "이 과제는 아직 공개되지 않았어요."
-        : `시작 실패: ${sErr.message}`;
+      const msg = /no questions/i.test(sErr.message) ? "No questions have been uploaded for this difficulty yet."
+        : /not available/i.test(sErr.message) ? "This assignment is not published yet."
+        : `Failed to start: ${sErr.message}`;
       startHint.innerHTML = `<p style="color:#b3352c">${msg}</p>`;
       startBtn.disabled = false; startBtn.textContent = orig;
       return;
@@ -131,7 +131,7 @@ startBtn.addEventListener("click", async () => {
       p_question_set_id: questionSetId,
     });
     if (qErr || !qs || !qs.length) {
-      startHint.innerHTML = `<p style="color:#b3352c">문제를 불러오지 못했습니다.</p>`;
+      startHint.innerHTML = `<p style="color:#b3352c">Could not load questions.</p>`;
       startBtn.disabled = false; startBtn.textContent = orig;
       return;
     }
@@ -149,10 +149,10 @@ startBtn.addEventListener("click", async () => {
     startBtn.textContent = "In progress";
     submitBtn.disabled = false;
     timerId = setInterval(() => { seconds++; timerEl.textContent = `Time ${fmt(seconds)}`; }, 1000);
-    saveNote.textContent = "진행 중";
+    saveNote.textContent = "In progress";
   } catch (err) {
     console.error(err);
-    startHint.innerHTML = `<p style="color:#b3352c">오류: ${err.message}</p>`;
+    startHint.innerHTML = `<p style="color:#b3352c">Error: ${err.message}</p>`;
     startBtn.disabled = false; startBtn.textContent = orig;
   }
 });
@@ -192,7 +192,7 @@ submitBtn.addEventListener("click", async () => {
   submitted = true;
   clearInterval(timerId);
   submitBtn.disabled = true;
-  submitBtn.textContent = "채점 중…";
+  submitBtn.textContent = "Grading…";
   // 입력 잠금
   document.querySelectorAll(".q button, .q input, .q textarea").forEach((el) => (el.disabled = true));
 
@@ -226,12 +226,12 @@ submitBtn.addEventListener("click", async () => {
     }
 
     showSummary(obj);
-    submitBtn.textContent = "제출 완료";
-    saveNote.textContent = "제출 완료";
+    submitBtn.textContent = "Submitted";
+    saveNote.textContent = "Submitted";
   } catch (err) {
     console.error(err);
-    submitBtn.textContent = "제출 실패";
-    alert("제출/채점 중 오류: " + (err.message || err));
+    submitBtn.textContent = "Submit failed";
+    alert("Error during submit/grading: " + (err.message || err));
   }
 });
 
@@ -243,7 +243,7 @@ function correctText(r) {
   if (r.type === "multiple_choice") {
     const choices = Array.isArray(q.choices) ? q.choices : [];
     const n = Number(c);
-    return `<b>${n}번</b>${choices[n - 1] ? ` (${escapeHtml(choices[n - 1])})` : ""}`;
+    return `<b>#${n}</b>${choices[n - 1] ? ` (${escapeHtml(choices[n - 1])})` : ""}`;
   }
   if (r.type === "blank") return `<b>${escapeHtml(Array.isArray(c) ? c[0] : c)}</b>`;
   return "-";
@@ -260,24 +260,24 @@ function renderObjectiveResults(obj) {
     } else {
       el.className = "q-result show q-result--wrong";
       qEl?.classList.add("graded-wrong");
-      el.innerHTML = `<p class="r-title">✗ Incorrect</p><p class="r-comment">정답: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
+      el.innerHTML = `<p class="r-title">✗ Incorrect</p><p class="r-comment">Answer: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
     }
   });
 }
 function markCodePending() {
   questions.filter((q) => q.question_type === "code").forEach((q) => {
     const el = document.getElementById(`result-${q.id}`);
-    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">⏳ AI 채점 중…</p>`; }
+    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">⏳ Grading with AI…</p>`; }
   });
 }
 function markCodeError(msg) {
   questions.filter((q) => q.question_type === "code").forEach((q) => {
     const el = document.getElementById(`result-${q.id}`);
-    if (el) el.innerHTML = `<p class="r-title">코드 채점 오류</p><p class="r-comment">${escapeHtml(msg)}</p>`;
+    if (el) el.innerHTML = `<p class="r-title">Code grading error</p><p class="r-comment">${escapeHtml(msg)}</p>`;
   });
 }
 function renderCodeResults(results) {
-  const STATUS = { correct: "정답으로 판단", needs_revision: "수정 필요", manual_review: "관리자 검토 필요" };
+  const STATUS = { correct: "Correct", needs_revision: "Needs revision", manual_review: "Manual review" };
   const CLS = { correct: "q-result--ok", needs_revision: "q-result--revise", manual_review: "q-result--review" };
   results.forEach((r) => {
     const el = document.getElementById(`result-${r.question_id}`);
@@ -286,19 +286,18 @@ function renderCodeResults(results) {
     const strengths = (r.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     const issues = (r.issues || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     el.innerHTML =
-      `<p class="r-title">${STATUS[r.status] || r.status} · ${r.score}점</p>
+      `<p class="r-title">${STATUS[r.status] || r.status} · ${r.score} pts</p>
        <p class="r-comment">${escapeHtml(r.comment || "")}</p>
-       ${strengths ? `<p class="r-comment"><b>잘한 점</b><ul>${strengths}</ul></p>` : ""}
-       ${issues ? `<p class="r-comment"><b>수정할 점</b><ul>${issues}</ul></p>` : ""}`;
+       ${strengths ? `<p class="r-comment"><b>Strengths</b><ul>${strengths}</ul></p>` : ""}
+       ${issues ? `<p class="r-comment"><b>To fix</b><ul>${issues}</ul></p>` : ""}`;
   });
 }
 function showSummary(obj) {
   const banner = document.createElement("div");
   banner.className = "ps-summary";
-  const pct = obj.objective_total ? Math.round((obj.objective_correct / obj.objective_total) * 100) : 0;
-  banner.innerHTML = `<h3>채점 결과</h3>
-    <p>자동 채점 <span class="s-score">${obj.objective_correct} / ${obj.objective_total}</span> 정답 (${pct}%) · 풀이 시간 ${fmt(seconds)}</p>
-    <p>코드 문제는 AI 평가 결과가 각 문제 아래에 표시됩니다.</p>`;
+  banner.innerHTML = `<h3>Results</h3>
+    <p>Auto-graded: <span class="s-score">${obj.objective_correct} / ${obj.objective_total}</span> correct · Objective <b>${obj.objective_points ?? 0}</b> / ${obj.objective_max ?? 0} pts · Time ${fmt(seconds)}</p>
+    <p>Code questions are evaluated by AI (worth ${obj.objective_max != null ? 100 - obj.objective_max : 50} pts total) — results appear under each question.</p>`;
   qWrap.prepend(banner);
   qWrap.scrollIntoView({ behavior: "smooth" });
 }
