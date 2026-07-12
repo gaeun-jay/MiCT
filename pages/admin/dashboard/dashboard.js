@@ -287,14 +287,28 @@ const uploadIcon = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="cu
 
 const problemGrid = document.getElementById("problemGrid");
 
+// 로컬(localhost)에서 열면 배포된 서버리스를 호출 (Vercel 배포 시엔 상대경로)
+const API_BASE =
+  location.hostname === "localhost" || location.hostname === "127.0.0.1"
+    ? "https://mi-ct.vercel.app"
+    : "";
+
+async function getToken() {
+  const { data: { session } } = await window.sb.auth.getSession();
+  return session?.access_token || null;
+}
+const DIFF_CAP = { easy: "Easy", medium: "Medium", hard: "Hard" };
+
 let dbClasses = [];          // DB classes
 let bonusTopics = [];        // DB bonus_topics
+let dbCounts = {};           // classId -> { total, diffs:Set } (DB 등록 문제수)
 const parsedByKey = {};      // key -> { filename, count, difficulties, questions } (로컬 MD 미리보기)
 
 async function loadProblemGrid() {
-  const [{ data: cls, error: cErr }, { data: bts }] = await Promise.all([
+  const [{ data: cls, error: cErr }, { data: bts }, { data: sets }] = await Promise.all([
     window.sb.from("classes").select("id, class_number, title, description, is_published").order("class_number"),
     window.sb.from("bonus_topics").select("id, is_published"),
+    window.sb.from("question_sets").select("class_id, difficulty, questions(count)").eq("is_active", true),
   ]);
   if (cErr) {
     problemGrid.innerHTML = `<p class="muted">클래스를 불러오지 못했습니다. (${cErr.message})</p>`;
@@ -302,6 +316,17 @@ async function loadProblemGrid() {
   }
   dbClasses = cls || [];
   bonusTopics = bts || [];
+
+  // DB 등록 문제수 집계 (Class별 총 문제수 + 난이도)
+  dbCounts = {};
+  (sets || []).forEach((s) => {
+    if (!s.class_id) return;
+    const n = Array.isArray(s.questions) ? (s.questions[0]?.count || 0) : 0;
+    const e = (dbCounts[s.class_id] ||= { total: 0, diffs: new Set() });
+    e.total += n;
+    if (n > 0) e.diffs.add(s.difficulty);
+  });
+
   renderProblemGrid();
 }
 
@@ -313,9 +338,10 @@ function renderProblemGrid() {
     const badge = pub
       ? `<span class="badge badge-green">공개</span>`
       : `<span class="badge badge-gray">비공개</span>`;
-    const info = parsed
-      ? `문제 <b>${parsed.count}</b>개 · 난이도 ${parsed.difficulties.join(" · ")} · 파일 <b>${escapeHtml(parsed.filename)}</b>`
-      : `문제 미등록 (MD 업로드 예정)`;
+    const cnt = dbCounts[c.id];
+    const info = cnt && cnt.total
+      ? `등록 문제 <b>${cnt.total}</b>개 · 난이도 ${[...cnt.diffs].map((d) => DIFF_CAP[d] || d).join(" · ")}`
+      : `문제 미등록 (MD 업로드 필요)`;
     return `
       <div class="card problem-item ${pub ? "" : "locked"}">
         <div class="card-body">
@@ -323,7 +349,7 @@ function renderProblemGrid() {
           <div class="pi-meta">${escapeHtml(c.title || "")}<br>${info}<br>${pub ? "학생 화면에 노출됨" : "학생 화면에서 <b>Locked</b>"}</div>
           <div class="pi-actions">
             <button class="btn ${pub ? "" : "btn-primary"}" data-toggle="${c.id}" data-pub="${pub}">${pub ? "비공개로" : "공개하기"}</button>
-            <label class="btn file-btn">${uploadIcon} MD 미리보기<input type="file" accept=".md,.markdown,.txt" data-parse="${key}" /></label>
+            <label class="btn file-btn">${uploadIcon} MD 업로드<input type="file" accept=".md,.markdown,.txt" data-parse="${key}" /></label>
             ${parsed ? `<button class="btn" data-preview="${key}">미리보기</button>` : ""}
           </div>
         </div>
@@ -491,31 +517,58 @@ function showPreview(key) {
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-// MD 미리보기 파싱 (로컬 — DB 저장은 배포 후 서버리스에서)
-problemGrid.addEventListener("change", (e) => {
+// MD 업로드 — 파싱 후 서버리스로 DB(questions) 저장
+problemGrid.addEventListener("change", async (e) => {
   const input = e.target.closest("input[data-parse]");
   if (!input || !input.files[0]) return;
   const key = input.dataset.parse;
+  const classId = key.replace(/^class-/, "");
   const file = input.files[0];
-  const reader = new FileReader();
-  reader.onload = () => {
-    const parsed = parseQuestionsMd(String(reader.result));
-    if (parsed.count === 0) {
-      alert("문제를 찾지 못했습니다. Markdown 형식을 확인하세요.\n(### Question, type:, question: 형식)");
+
+  let text;
+  try { text = await file.text(); } catch { alert("파일을 읽지 못했습니다."); input.value = ""; return; }
+
+  const parsed = parseQuestionsMd(text);
+  if (parsed.count === 0) {
+    alert("문제를 찾지 못했습니다. Markdown 형식을 확인하세요.\n(### Question, type:, question: 형식)");
+    input.value = "";
+    return;
+  }
+
+  // 미리보기용 저장 (앞 20개)
+  parsedByKey[key] = {
+    filename: file.name,
+    count: parsed.count,
+    difficulties: parsed.difficulties.length ? parsed.difficulties : ["-"],
+    questions: parsed.questions.slice(0, 20),
+  };
+
+  // DB 업로드 (관리자 토큰)
+  const token = await getToken();
+  if (!token) { alert("로그인이 만료되었습니다. 다시 로그인해 주세요."); return; }
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/upload-questions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ class_id: classId, filename: file.name, questions: parsed.questions }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      alert(`업로드 실패: ${data.error || resp.status}`);
       return;
     }
-    parsedByKey[key] = {
-      filename: file.name,
-      count: parsed.count,
-      difficulties: parsed.difficulties.length ? parsed.difficulties : ["-"],
-      questions: parsed.questions.slice(0, 20),
-    };
-    console.log("[문제 관리] MD 파싱:", key, file.name, parsed.count + "문제");
-    renderProblemGrid();
+    const detail = Object.entries(data.counts || {}).map(([d, n]) => `${d} ${n}`).join(", ");
+    console.log("[문제 관리] DB 업로드:", file.name, data.total + "문제");
+    alert(`"${file.name}" 업로드 완료 🎉\nDB에 ${data.total}개 문제 등록 (${detail})`);
+    await loadProblemGrid(); // 등록 문제수 갱신
     showPreview(key);
-    alert(`"${file.name}" 파싱 완료 · ${parsed.count}개 문제\n\n(로컬 미리보기입니다. questions 테이블 저장은 배포 후 서버리스(service_role)에서 처리됩니다.)`);
-  };
-  reader.readAsText(file);
+  } catch (err) {
+    console.error(err);
+    alert("업로드 오류: " + err.message);
+  } finally {
+    input.value = "";
+  }
 });
 
 // 공개 토글(DB) / 미리보기 / Bonus 전체 토글(DB)
