@@ -143,6 +143,31 @@
 }
 .code-input:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.2); }
 
+/* 코드 실행 (Pyodide) */
+.code-stdin { margin-top: 10px; }
+.code-stdin > summary { cursor: pointer; font-size: 13px; color: #5b6068; user-select: none; list-style: revert; }
+.code-stdin-input {
+  width: 100%; margin-top: 8px; min-height: 54px; padding: 10px 12px; resize: vertical;
+  border: 1px solid #d5d9df; border-radius: 10px; background: #fff; color: #16181c;
+  font-family: "JetBrains Mono", monospace; font-size: 13px; outline: none;
+}
+.code-stdin-input:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
+.code-runbar { margin-top: 10px; }
+.code-run-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px;
+  border-radius: 10px; border: 1px solid #16a34a; background: #eafaf0; color: #12833c;
+  font-weight: 700; font-size: 14px; cursor: pointer; transition: background .15s ease;
+}
+.code-run-btn:hover { background: #d7f5e3; }
+.code-run-btn:disabled { opacity: .6; cursor: progress; }
+.code-output {
+  margin-top: 12px; padding: 14px 16px; border-radius: 12px;
+  background: #0d1117; color: #e6edf3;
+  font-family: "JetBrains Mono", monospace; font-size: 13px; line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto;
+}
+.code-output--err { background: #2b1416; color: #ffb4ab; border: 1px solid #7a2e2e; }
+
 /* ---------- 채점 결과 ---------- */
 .q-result { margin-top: 14px; padding: 14px 16px; border-radius: 12px; font-size: clamp(14px,1.6vw,15px); line-height: 1.6; display: none; }
 .q-result.show { display: block; }

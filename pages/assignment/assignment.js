@@ -81,6 +81,11 @@ function applyQuestionLang() {
         if (span && chs[ci] != null) span.textContent = chs[ci];
       });
     }
+    if (q.question_type === "code") {
+      const rl = qEl.querySelector(".crb-label"); if (rl) rl.textContent = t("code_run");
+      const ss = qEl.querySelector(".code-stdin > summary"); if (ss) ss.textContent = t("code_stdin");
+      const si = qEl.querySelector(".code-stdin-input"); if (si) si.placeholder = t("code_stdin_ph");
+    }
   });
 }
 window.addEventListener("i18n:change", applyQuestionLang);
@@ -133,7 +138,18 @@ function renderQuestion(q, i) {
   } else if (q.question_type === "blank") {
     body = `<input type="text" class="blank-input" placeholder="${t("answer_placeholder")}" autocomplete="off" spellcheck="false">`;
   } else if (q.question_type === "code") {
-    body = `<textarea class="code-input" spellcheck="false" placeholder="# Write your code here\n"></textarea>`;
+    body = `<textarea class="code-input" spellcheck="false" placeholder="# Write your code here\n"></textarea>
+      <details class="code-stdin">
+        <summary>${t("code_stdin")}</summary>
+        <textarea class="code-stdin-input" spellcheck="false" placeholder="${t("code_stdin_ph")}"></textarea>
+      </details>
+      <div class="code-runbar">
+        <button type="button" class="code-run-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <span class="crb-label">${t("code_run")}</span>
+        </button>
+      </div>
+      <pre class="code-output" hidden></pre>`;
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
     <div class="q-head"><span class="q-num">${t("question_single")} ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
@@ -152,6 +168,73 @@ qWrap.addEventListener("click", (e) => {
   if (ox) { ox.parentElement.querySelectorAll(".ox-btn").forEach((b) => b.classList.remove("is-sel")); ox.classList.add("is-sel"); }
   const mc = e.target.closest(".mc-opt");
   if (mc) { mc.parentElement.querySelectorAll(".mc-opt").forEach((b) => b.classList.remove("is-sel")); mc.classList.add("is-sel"); }
+});
+
+// ---- 코드 실행 (Pyodide, Web Worker) — 학생 출력 확인용, 채점과 무관 ----
+//   워커로 격리 → 무한 루프여도 UI 안 멈춤, 타임아웃 시 terminate() 로 강제 종료
+const RUN_TIMEOUT_MS = 10000;
+let _worker = null, _readyPromise = null, _pyLoaded = false, _seq = 0;
+
+function getWorker() {
+  if (!_worker) {
+    _pyLoaded = false;
+    _worker = new Worker("pyworker.js?v=1");
+    _readyPromise = new Promise((resolve, reject) => {
+      const to = setTimeout(() => reject(new Error("__loadfail__")), 60000);
+      _worker.addEventListener("message", function onReady(e) {
+        if (!e.data) return;
+        if (e.data.type === "ready") { clearTimeout(to); _worker.removeEventListener("message", onReady); _pyLoaded = true; resolve(); }
+        else if (e.data.type === "loaderror") { clearTimeout(to); _worker.removeEventListener("message", onReady); reject(new Error("__loadfail__")); }
+      });
+    });
+  }
+  return _worker;
+}
+function resetWorker() {
+  if (_worker) { try { _worker.terminate(); } catch {} }
+  _worker = null; _readyPromise = null; _pyLoaded = false;
+}
+async function runPythonWorker(code, stdin) {
+  getWorker();
+  await _readyPromise;                    // Pyodide 로드 완료까지 대기(로딩 표시)
+  return new Promise((resolve, reject) => {
+    const w = _worker;
+    const id = ++_seq;
+    const timer = setTimeout(() => { cleanup(); resetWorker(); reject(new Error("__timeout__")); }, RUN_TIMEOUT_MS);
+    function onMsg(e) {
+      if (!e.data || e.data.id !== id) return;
+      cleanup();
+      if (e.data.ok) resolve(e.data.output); else reject(new Error(e.data.error || "run failed"));
+    }
+    function onErr() { cleanup(); resetWorker(); reject(new Error("worker error")); }
+    function cleanup() { clearTimeout(timer); w.removeEventListener("message", onMsg); w.removeEventListener("error", onErr); }
+    w.addEventListener("message", onMsg);
+    w.addEventListener("error", onErr);
+    w.postMessage({ type: "run", id, code, stdin });
+  });
+}
+qWrap.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".code-run-btn");
+  if (!btn) return;
+  const qEl = btn.closest(".q");
+  const code = qEl.querySelector(".code-input")?.value || "";
+  const stdin = qEl.querySelector(".code-stdin-input")?.value || "";
+  const outEl = qEl.querySelector(".code-output");
+  outEl.hidden = false;
+  outEl.classList.remove("code-output--err");
+  outEl.textContent = _pyLoaded ? t("code_running") : t("code_loading");
+  btn.disabled = true;
+  try {
+    const out = await runPythonWorker(code, stdin);
+    outEl.textContent = out.replace(/\s+$/, "") || t("code_no_output");
+  } catch (err) {
+    outEl.classList.add("code-output--err");
+    outEl.textContent = err.message === "__timeout__" ? t("code_timeout")
+      : err.message === "__loadfail__" ? t("code_loadfail")
+      : String(err.message || err);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // ============================================================
