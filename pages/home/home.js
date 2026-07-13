@@ -13,60 +13,70 @@ document.getElementById("logoutLink")?.addEventListener("click", (e) => {
 const grid = document.getElementById("asnGrid");
 const chip = document.getElementById("studentChip");
 
-const STATUS_CLS = {
-  completed:   "asn-badge--done",
-  in_progress: "asn-badge--progress",
-  not_started: "asn-badge--todo",
-  locked:      "asn-badge--locked",
-};
-const STATUS_KEY = {
-  completed: "badge_done", in_progress: "badge_progress",
-  not_started: "badge_todo", locked: "badge_locked",
-};
-const diffLabel = (d) => (d ? t("diff_" + d) : "-");
+const DIFFS = ["easy", "medium", "hard"];
+const CHECK = `<svg class="asn-diff-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`;
 
-function fmtTime(sec) {
-  if (sec == null) return "";
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
 function conceptList(concepts) {
   if (!concepts.length) return "";
   return `<ul class="asn-concepts">${concepts.map((c) => `<li>${c}</li>`).join("")}</ul>`;
 }
-function metaRow(a) {
-  if (a.status === "completed") {
-    return `<div class="asn-meta">
-      <span><b>${diffLabel(a.difficulty)}</b></span>
-      <span><b>${a.score ?? "-"}</b> ${t("pts")}</span>
-      <span>${a.time ?? ""}</span>
+
+// 난이도 상태 판정
+function diffState(a) {
+  if (!a) return "open";
+  if (a.status === "graded" || a.status === "manual_review") return "done";
+  if (a.status === "in_progress" || a.status === "submitted") return "progress";
+  return "open";
+}
+
+function cardHTML(item) {
+  // Bonus 카드 (단일 링크)
+  if (item.type === "bonus") {
+    return `<a class="asn-card glass-card asn-card--bonus" href="../bonus/bonus.html" data-key="bonus">
+      <span class="asn-badge asn-badge--todo">${t("badge_todo")}</span>
+      <h2 class="asn-title">${t("bonus_challenge_html")}</h2>
+    </a>`;
+  }
+
+  // 미공개 클래스
+  if (!item.published) {
+    return `<div class="asn-card glass-card asn-card--locked" data-key="class${item.classNo}">
+      <span class="asn-badge asn-badge--locked">${t("badge_locked")}</span>
+      <h2 class="asn-title">${t("assignment")} ${item.classNo}</h2>
+      ${conceptList(item.concepts)}
     </div>`;
   }
-  if (a.status === "in_progress") {
-    return `<div class="asn-meta"><span><b>${diffLabel(a.difficulty)}</b></span><span>${t("continue")}</span></div>`;
-  }
-  return "";
-}
-function hrefFor(a) {
-  if (a.bonus) return "../bonus/bonus.html";
-  return `../assignment/assignment.html?class=${a.classNo}`;
-}
-function cardHTML(a) {
-  const classes = [
-    "asn-card", "glass-card",
-    a.bonus ? "asn-card--bonus" : "",
-    a.status === "completed" ? "asn-card--done" : "",
-    a.status === "locked" ? "asn-card--locked" : "",
-  ].filter(Boolean).join(" ");
-  const titleHTML = a.bonus ? t("bonus_challenge_html") : `${t("assignment")} ${a.classNo}`;
-  const tag = a.status === "locked" ? "div" : "a";
-  const hrefAttr = a.status === "locked" ? "" : ` href="${hrefFor(a)}"`;
-  return `<${tag} class="${classes}"${hrefAttr} data-key="${a.key}">
-    <span class="asn-badge ${STATUS_CLS[a.status]}">${t(STATUS_KEY[a.status])}</span>
-    <h2 class="asn-title">${titleHTML}</h2>
-    ${conceptList(a.concepts)}
-    ${metaRow(a)}
-  </${tag}>`;
+
+  // 공개 클래스 — 난이도 3개 각각 도전
+  const states = DIFFS.map((d) => ({ d, state: diffState(item.byDiff[d]), score: item.byDiff[d]?.total_score }));
+  const doneCount = states.filter((s) => s.state === "done").length;
+  const allDone = doneCount === DIFFS.length;
+  const badge = allDone
+    ? `<span class="asn-badge asn-badge--done">${t("badge_done")}</span>`
+    : doneCount > 0
+      ? `<span class="asn-badge asn-badge--progress">${doneCount}/${DIFFS.length}</span>`
+      : `<span class="asn-badge asn-badge--todo">${t("badge_todo")}</span>`;
+
+  const chips = states.map((s) => {
+    const label = t("diff_" + s.d);
+    if (s.state === "done") {
+      return `<span class="asn-diff asn-diff--done">
+        <span class="asn-diff-name">${label}</span>
+        <span class="asn-diff-mark">${CHECK}${s.score != null ? ` ${s.score}` : ""}</span></span>`;
+    }
+    const cls = s.state === "progress" ? "asn-diff--progress" : "asn-diff--open";
+    const mark = s.state === "progress" ? t("continue") : "";
+    return `<a class="asn-diff ${cls}" href="../assignment/assignment.html?class=${item.classNo}&difficulty=${s.d}">
+      <span class="asn-diff-name">${label}</span>
+      <span class="asn-diff-mark">${mark}</span></a>`;
+  }).join("");
+
+  return `<div class="asn-card glass-card ${allDone ? "asn-card--done" : ""}" data-key="class${item.classNo}">
+    ${badge}
+    <h2 class="asn-title">${t("assignment")} ${item.classNo}</h2>
+    ${conceptList(item.concepts)}
+    <div class="asn-diffs">${chips}</div>
+  </div>`;
 }
 
 async function loadHome() {
@@ -94,43 +104,29 @@ async function loadHome() {
     return;
   }
 
-  // 이 학생의 assignments (있으면 상태 반영)
-  const byClass = {};
+  // 이 학생의 assignments → (클래스 × 난이도) 매핑
+  const byClassDiff = {};
   if (me) {
     const { data: asgs } = await window.sb
       .from("assignments")
-      .select("class_id, status, difficulty, total_score, total_duration_seconds")
+      .select("class_id, difficulty, status, total_score")
       .eq("student_id", me.id);
-    (asgs || []).forEach((a) => { if (a.class_id) byClass[a.class_id] = a; });
+    (asgs || []).forEach((a) => {
+      if (!a.class_id || !a.difficulty) return;
+      (byClassDiff[a.class_id] ||= {})[a.difficulty] = a;
+    });
   }
 
-  const cards = (classes || []).map((c) => {
-    const concepts = (c.description || "").split(",").map((s) => s.trim()).filter(Boolean);
-    const asg = byClass[c.id];
-    let status = "locked", difficulty = null, score = null, time = null;
-    if (c.is_published) {
-      if (asg && asg.status === "graded") {
-        status = "completed";
-        difficulty = asg.difficulty;               // raw (렌더 시 다국어)
-        score = asg.total_score;
-        time = fmtTime(asg.total_duration_seconds);
-      } else if (asg && (asg.status === "in_progress" || asg.status === "submitted")) {
-        status = "in_progress";
-        difficulty = asg.difficulty;
-      } else {
-        status = "not_started";
-      }
-    }
-    return {
-      key: `class${c.class_number}`, classNo: c.class_number,
-      concepts, status, difficulty, score, time,
-    };
-  });
+  const items = (classes || []).map((c) => ({
+    type: "class",
+    classNo: c.class_number,
+    published: c.is_published,
+    concepts: (c.description || "").split(",").map((s) => s.trim()).filter(Boolean),
+    byDiff: byClassDiff[c.id] || {},
+  }));
+  items.push({ type: "bonus" });
 
-  // Bonus 카드 (항상 진입 가능)
-  cards.push({ key: "bonus", bonus: true, concepts: [], status: "not_started" });
-
-  lastCards = cards;
+  lastCards = items;
   renderCards();
 }
 

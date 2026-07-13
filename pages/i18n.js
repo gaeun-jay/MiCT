@@ -80,6 +80,7 @@
       code_ai_note: "Code questions are evaluated by AI (worth {n} pts total) — results appear under each question.",
       err_no_questions_diff: "No questions have been uploaded for this difficulty yet.",
       err_not_published: "This assignment is not published yet.",
+      err_already_submitted: "You've already submitted this difficulty. Pick another one.",
       err_load_questions: "Could not load questions.",
       answer_placeholder: "Your answer",
       // 보너스
@@ -163,6 +164,7 @@
       code_ai_note: "Питання з кодом оцінює ШІ (усього {n} балів) — результати показані під кожним питанням.",
       err_no_questions_diff: "Для цієї складності ще не завантажено питань.",
       err_not_published: "Це завдання ще не опубліковано.",
+      err_already_submitted: "Ви вже здали цю складність. Виберіть іншу.",
       err_load_questions: "Не вдалося завантажити питання.",
       answer_placeholder: "Ваша відповідь",
       bonus_title: "Бонусний виклик",

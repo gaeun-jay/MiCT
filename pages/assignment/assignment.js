@@ -15,13 +15,15 @@ async function getToken() {
 
 const params = new URLSearchParams(location.search);
 const classNo = params.get("class") || "1";
+// 홈에서 특정 난이도로 진입 시 미리 선택 (?difficulty=easy|medium|hard)
+const preDiff = ({ easy: "Easy", medium: "Medium", hard: "Hard" })[(params.get("difficulty") || "").toLowerCase()] || null;
 
 const TYPE_KEY = { ox: "type_ox", multiple_choice: "type_mc", blank: "type_blank", code: "type_code" };
 const DIFF_KEY = { Easy: "diff_easy", Medium: "diff_medium", Hard: "diff_hard" };
 const diffLabelOf = (v) => t(DIFF_KEY[v] || "diff_easy");
 
 // ---- 상태 ----
-let started = false, submitted = false, difficulty = "Easy";
+let started = false, submitted = false, difficulty = preDiff || "Easy";
 let seconds = 0, timerId = null;
 let assignmentId = null, questionSetId = null;
 let questions = [];                 // get_student_questions 결과
@@ -85,6 +87,8 @@ document.addEventListener("click", (e) => {
 // ---- 타이머 ----
 const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
+// URL 로 지정된 난이도를 드롭다운에 반영
+if (preDiff) diffMenu.querySelectorAll("li").forEach((x) => x.classList.toggle("is-sel", x.dataset.v === preDiff));
 refreshChrome();  // 초기 언어로 제목/버튼/난이도/타이머 표기
 
 // ---- 문제 렌더 ----
@@ -140,6 +144,7 @@ startBtn.addEventListener("click", async () => {
     });
     if (sErr) {
       const msg = /no questions/i.test(sErr.message) ? t("err_no_questions_diff")
+        : /already submitted/i.test(sErr.message) ? t("err_already_submitted")
         : /not available/i.test(sErr.message) ? t("err_not_published")
         : `${sErr.message}`;
       startHint.innerHTML = `<p style="color:#b3352c">${msg}</p>`;
