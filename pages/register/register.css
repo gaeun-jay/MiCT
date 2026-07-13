@@ -1,0 +1,68 @@
+/* ============================================================
+   Register — 학생 셀프 회원가입 (네온 테마)
+   ============================================================ */
+.register-card {
+  width: min(94vw, 720px);
+  padding: clamp(24px, 4vw, 48px) clamp(20px, 3.2vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.4vw, 28px);
+}
+
+.reg-title {
+  margin: 0;
+  text-align: center;
+  font-weight: 900;
+  font-size: clamp(24px, 4vw, 40px);
+  letter-spacing: 0.02em;
+  color: var(--white);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+.reg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(14px, 2vw, 22px);
+}
+.reg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.reg-field--wide { grid-column: 1 / -1; }
+
+.reg-label {
+  font-family: "Orbitron", sans-serif;
+  font-weight: 700;
+  font-size: clamp(13px, 1.4vw, 16px);
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* select 도 field-input 스타일을 따르되 화살표 여백 확보 */
+select.field-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 44px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2300ff48' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  cursor: pointer;
+}
+select.field-input option { color: #111; }
+
+.reg-error { margin: -6px 2px 0; }
+
+.reg-login-link {
+  text-align: center;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  margin-top: 2px;
+}
+.reg-login-link:hover { color: var(--green); }
+
+@media (max-width: 560px) {
+  .reg-grid { grid-template-columns: 1fr; }
+}

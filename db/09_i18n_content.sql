@@ -12,7 +12,9 @@ alter table public.questions add column if not exists choices_uk jsonb;   -- 객
 
 -- ------------------------------------------------------------
 -- 학생용: 정답 없는 문제 (uk 포함)
+--   반환 컬럼이 바뀌므로 create or replace 불가 → 먼저 DROP
 -- ------------------------------------------------------------
+drop function if exists public.get_student_questions(uuid);
 create or replace function public.get_student_questions(p_question_set_id uuid)
 returns table (
   id               uuid,
@@ -40,7 +42,9 @@ grant execute on function public.get_student_questions(uuid) to authenticated;
 
 -- ------------------------------------------------------------
 -- 보너스용: 정답 없는 문제 (uk 포함)
+--   반환 컬럼이 바뀌므로 create or replace 불가 → 먼저 DROP
 -- ------------------------------------------------------------
+drop function if exists public.get_bonus_questions(uuid);
 create or replace function public.get_bonus_questions(p_bonus_question_set_id uuid)
 returns table (
   id               uuid,

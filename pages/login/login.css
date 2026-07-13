@@ -15,9 +15,19 @@
 /* 각 행의 라벨/입력을 카드 그리드에 직접 배치해 두 행의 입력 시작점을 정렬 */
 .login-card .field-row { display: contents; }
 .login-card .login-error,
-.login-card > button { grid-column: 1 / -1; }
+.login-card > button,
+.login-card > .login-signup-link { grid-column: 1 / -1; }
 
 .login-error { margin: -8px 4px 0; }
+
+.login-signup-link {
+  text-align: center;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  margin-top: -6px;
+}
+.login-signup-link:hover { color: var(--green); }
 
 @media (max-width: 460px) {
   .field-input { padding-right: 52px; }

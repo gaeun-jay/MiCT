@@ -194,7 +194,7 @@ function escAttr(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g
 function renderStudents() {
   studentTbody.innerHTML = "";
   if (!students.length) {
-    studentTbody.innerHTML = `<tr><td colspan="6" class="muted">등록된 학생이 없습니다. CSV 업로드 또는 단일 생성으로 계정을 만드세요.</td></tr>`;
+    studentTbody.innerHTML = `<tr><td colspan="5" class="muted">등록된 학생이 없습니다. 학생이 회원가입 페이지에서 직접 계정을 만듭니다.</td></tr>`;
     return;
   }
   students.forEach((s) => {
@@ -204,12 +204,7 @@ function renderStudents() {
       <td>
         <input class="name-input" value="${escAttr(s.name)}" data-id="${s.id}" />
       </td>
-      <td>${s.age ?? "-"}</td>
-      <td>
-        <span class="badge ${s.must_change_password ? "badge-amber" : "badge-gray"}">
-          ${s.must_change_password ? "필요" : "완료"}
-        </span>
-      </td>
+      <td>${s.age_group || "-"}</td>
       <td class="muted">${s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-"}</td>
       <td>
         <button class="btn btn-sm reissue-btn" data-code="${s.student_code}" data-name="${escAttr(s.name)}">재발급</button>
@@ -223,7 +218,7 @@ async function loadStudents() {
   studentTbody.innerHTML = `<tr><td colspan="5" class="muted">불러오는 중…</td></tr>`;
   const { data, error } = await window.sb
     .from("students")
-    .select("id, student_code, name, age, must_change_password, last_login_at")
+    .select("id, student_code, name, age_group, last_login_at")
     .order("student_code");
   if (error) {
     studentTbody.innerHTML = `<tr><td colspan="5" class="muted">불러오기 실패: ${error.message}</td></tr>`;
@@ -274,118 +269,13 @@ studentTbody.addEventListener("click", async (e) => {
   }
 });
 
-// service_role 서버리스로 계정 생성 (공통)
-async function createAccounts(payload) {
-  const token = await getToken();
-  if (!token) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); return null; }
-  const resp = await fetch(`${API_BASE}/api/create-students`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-    body: JSON.stringify({ students: payload }),
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) { alert("생성 실패: " + (data.error || resp.status)); return null; }
-  return data;
-}
-
-// 다음 학생 번호 계산 (StudentNNN)
-function nextStudentCode() {
-  const nums = students
-    .map((s) => parseInt(String(s.student_code || "").replace(/\D/g, ""), 10))
-    .filter(Number.isFinite);
-  const n = (nums.length ? Math.max(...nums) : 0) + 1;
-  return "Student" + String(n).padStart(3, "0");
-}
-
-// 단일 계정 생성
-document.getElementById("btnCreateSingle").addEventListener("click", async () => {
-  const newId = nextStudentCode();
-  const name = prompt(`새 학생 이름을 입력하세요.\n아이디: ${newId}`, "");
-  if (name === null) return;
-  const ageStr = prompt("나이 (선택, 숫자):", "");
-  const ageNum = parseInt(ageStr, 10);
-  const data = await createAccounts([
-    { student_code: newId, name: name.trim(), age: Number.isFinite(ageNum) ? ageNum : null },
-  ]);
-  if (!data) return;
-  const r = data.results[0];
-  if (r.status === "created") {
-    alert(`계정이 생성되었습니다.\n아이디: ${newId}\n임시 비밀번호: ${r.password}\n\n이 비밀번호를 학생에게 전달하세요. (첫 로그인 시 변경됩니다.)`);
-  } else if (r.status === "exists") {
-    alert(`이미 존재하는 계정입니다: ${newId}\n(이름/나이만 갱신했습니다.)`);
-  } else {
-    alert(`생성 실패: ${r.error || "알 수 없는 오류"}`);
-  }
-  await loadStudents();
-});
-
-// 다중 계정 생성 — 학생 CSV 업로드 → 파싱 (Student_Number, Name, Age)
-//   · 맨 위 "Table 1" 타이틀 / 헤더 / 빈 줄 / 뒤쪽 빈 컬럼 자동 스킵
-//   · 이름 앞뒤 공백 제거
-function parseStudentCsv(text) {
-  const out = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    const cols = line.split(",");
-    const code = (cols[0] || "").trim();
-    if (!/^student\s*\d+/i.test(code)) continue; // 데이터 행만 (타이틀/헤더 자동 제외)
-    const name = (cols[1] || "").trim();
-    const ageNum = parseInt((cols[2] || "").trim(), 10);
-    out.push({
-      code: code.replace(/\s+/g, ""),
-      name,
-      age: Number.isFinite(ageNum) ? ageNum : null,
-    });
-  }
-  return out;
-}
-
-document.getElementById("csvUpload").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const text = await file.text();
-  const parsed = parseStudentCsv(text);
-  e.target.value = "";
-  if (!parsed.length) {
-    alert("학생 데이터를 찾지 못했습니다. CSV 형식을 확인하세요.\n(열: Student_Number, Name, Age)");
-    return;
-  }
-  if (!confirm(
-    `"${file.name}" · 총 ${parsed.length}명의 계정을 생성합니다.\n` +
-    `임시 비밀번호가 발급되며, 완료 후 비밀번호 CSV가 자동 다운로드됩니다.\n\n계속할까요?`
-  )) return;
-
-  const data = await createAccounts(
-    parsed.map((p) => ({ student_code: p.code, name: p.name, age: p.age }))
-  );
-  if (!data) return;
-
-  // 신규 생성된 계정의 임시 비밀번호를 CSV로 다운로드
-  const createdRows = (data.results || []).filter((r) => r.status === "created");
-  if (createdRows.length) {
-    const header = ["학생아이디", "이름", "임시비밀번호"];
-    const rows = createdRows.map((r) => [r.student_code, r.name, r.password]);
-    const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
-    downloadFile("﻿" + csv, "student_passwords.csv", "text/csv;charset=utf-8;");
-  }
-  alert(
-    `완료 · 신규 ${data.created}명 / 기존 ${data.existed}명 / 오류 ${data.errored}명\n\n` +
-    (createdRows.length
-      ? "신규 계정의 임시 비밀번호가 CSV로 다운로드되었습니다.\n학생들에게 전달하세요. (첫 로그인 시 변경됩니다.)"
-      : "신규 생성된 계정이 없습니다.")
-  );
-  await loadStudents();
-});
-
-// 학생 목록 CSV 다운로드 (임시 비밀번호 제외 — DB에 평문 비번 없음)
+// 학생 목록 CSV 다운로드 (학생은 회원가입 페이지에서 직접 계정 생성)
 document.getElementById("btnDownloadCsv").addEventListener("click", () => {
-  const header = ["학생아이디", "이름", "나이", "비밀번호변경필요", "마지막로그인일시"];
+  const header = ["학생아이디", "이름", "나이대", "마지막로그인일시"];
   const rows = students.map((s) => [
     s.student_code,
     s.name,
-    s.age ?? "",
-    s.must_change_password ? "필요" : "완료",
+    s.age_group || "",
     s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-",
   ]);
   const csv = [header, ...rows]

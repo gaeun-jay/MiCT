@@ -63,7 +63,7 @@
             <div class="section">
               <h2 class="section-title">학생 계정 관리</h2>
               <p class="section-desc">
-                학생 계정을 생성·수정하고 활성 상태와 임시 비밀번호를 관리합니다.
+                학생은 <b>회원가입 페이지</b>에서 직접 계정을 만듭니다. 여기서는 학생 목록 확인·이름 수정·비밀번호 재발급을 합니다.
               </p>
             </div>
 
@@ -71,15 +71,6 @@
               <div class="card-head">
                 <h2>학생 목록</h2>
                 <div class="toolbar">
-                  <button class="btn" id="btnCreateSingle">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    단일 계정 생성
-                  </button>
-                  <label class="btn file-btn">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    다중 계정 생성
-                    <input type="file" id="csvUpload" accept=".csv" />
-                  </label>
                   <button class="btn btn-primary" id="btnDownloadCsv">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     학생 목록 CSV 다운로드
@@ -93,8 +84,7 @@
                       <tr>
                         <th>학생 아이디</th>
                         <th>이름</th>
-                        <th>나이</th>
-                        <th>비밀번호 변경 필요</th>
+                        <th>나이대</th>
                         <th>마지막 로그인 일시</th>
                         <th>비밀번호 재발급</th>
                       </tr>
@@ -304,6 +294,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../../supabase-config.js"></script>
-    <script src="dashboard.js?v=8"></script>
+    <script src="dashboard.js?v=9"></script>
   </body>
 </html>
