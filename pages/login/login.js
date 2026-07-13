@@ -83,10 +83,15 @@ form.addEventListener("submit", async (e) => {
       return;
     }
 
-    // 마지막 로그인 일시 기록 (관리자 대시보드 표시용) — 실패해도 로그인은 진행
-    window.sb.rpc("record_login").then(({ error }) => {
-      if (error) console.warn("record_login failed:", error.message);
-    });
+    // 마지막 로그인 일시 기록 (관리자 대시보드 표시용)
+    // 반드시 await — 아래 페이지 이동(location.href) 전에 완료해야 요청이 취소되지 않음.
+    // 실패해도 로그인 흐름은 막지 않음.
+    try {
+      const { error: loginErr } = await window.sb.rpc("record_login");
+      if (loginErr) console.warn("record_login failed:", loginErr.message);
+    } catch (e) {
+      console.warn("record_login error:", e);
+    }
 
     // 표시용 정보 저장
     localStorage.setItem("studentId", student?.student_code || studentId);
