@@ -1087,6 +1087,62 @@ const STATUS_KO = {
   graded: "완료", manual_review: "검토필요",
 };
 
+// 레포트 다국어 라벨 (한/영/우크)
+const REPORT_L10N = {
+  ko: {
+    title: "학생 성장 리포트", generated: "생성일", students: "대상 학생", count: "명",
+    note: "제출 데이터·AI 코드 피드백을 취합하고, 통계 기반 AI 성장 분석을 포함합니다.",
+    summary: "요약", participation: "참여 현황",
+    lessons_done: "수업 완료", lessons_started: "수업 시작", diff_attempts: "난이도 도전(횟수)",
+    avg_time: "평균 풀이 시간", bonus: "보너스", min: "분",
+    scores: "점수", avg_score: "평균 점수", by_difficulty: "난이도별 평균", obj_code: "객관식 / 코드 평균",
+    trend: "점수 추이", concept_acc: "개념별 정확도", type_acc: "유형별 정확도",
+    ai_strengths: "강점", ai_weak: "보완 필요", ai_reco: "권장 학습",
+    detail: "과제 상세", none: "데이터 없음",
+    col_lesson: "수업", col_diff: "난이도", col_status: "상태", col_total: "총점", col_obj: "객관식", col_code: "코드", col_time: "시간", col_sub: "제출",
+    col_concept: "개념", col_correct: "정답", col_rate: "정확도", col_type: "유형", col_score: "점수",
+    diff: { easy: "하", medium: "중", hard: "상" },
+    status: { not_started: "미시작", in_progress: "진행중", submitted: "채점중", graded: "완료", manual_review: "검토필요" },
+    footer: "Python 과제 관리 시스템 · 관리자 콘솔에서 자동 생성됨",
+  },
+  en: {
+    title: "Student Growth Report", generated: "Generated", students: "Students", count: "",
+    note: "Aggregates submission data and AI code feedback, with an AI-written growth analysis based on the statistics.",
+    summary: "Summary", participation: "Participation",
+    lessons_done: "Lessons completed", lessons_started: "Lessons started", diff_attempts: "Difficulty attempts",
+    avg_time: "Avg. solving time", bonus: "Bonus", min: "min",
+    scores: "Scores", avg_score: "Average score", by_difficulty: "By difficulty", obj_code: "Objective / Code avg",
+    trend: "Score trend", concept_acc: "Concept accuracy", type_acc: "Accuracy by type",
+    ai_strengths: "Strengths", ai_weak: "To improve", ai_reco: "Recommendations",
+    detail: "Assignment detail", none: "No data",
+    col_lesson: "Lesson", col_diff: "Difficulty", col_status: "Status", col_total: "Total", col_obj: "Objective", col_code: "Code", col_time: "Time", col_sub: "Submitted",
+    col_concept: "Concept", col_correct: "Correct", col_rate: "Accuracy", col_type: "Type", col_score: "Score",
+    diff: { easy: "Easy", medium: "Medium", hard: "Hard" },
+    status: { not_started: "Not started", in_progress: "In progress", submitted: "Grading", graded: "Done", manual_review: "Review" },
+    footer: "Python Practice System · auto-generated in the admin console",
+  },
+  uk: {
+    title: "Звіт про прогрес учня", generated: "Дата", students: "Учнів", count: "",
+    note: "Узагальнює дані здач та відгуки ШІ щодо коду, містить аналіз прогресу від ШІ на основі статистики.",
+    summary: "Підсумок", participation: "Участь",
+    lessons_done: "Уроків завершено", lessons_started: "Уроків розпочато", diff_attempts: "Спроби за складністю",
+    avg_time: "Середній час", bonus: "Бонус", min: "хв",
+    scores: "Бали", avg_score: "Середній бал", by_difficulty: "За складністю", obj_code: "Об'єктивні / Код",
+    trend: "Динаміка балів", concept_acc: "Точність за темами", type_acc: "Точність за типом",
+    ai_strengths: "Сильні сторони", ai_weak: "Що покращити", ai_reco: "Рекомендації",
+    detail: "Деталі завдань", none: "Немає даних",
+    col_lesson: "Урок", col_diff: "Складність", col_status: "Статус", col_total: "Разом", col_obj: "Об'єктивні", col_code: "Код", col_time: "Час", col_sub: "Здано",
+    col_concept: "Тема", col_correct: "Правильно", col_rate: "Точність", col_type: "Тип", col_score: "Бал",
+    diff: { easy: "Легкий", medium: "Середній", hard: "Складний" },
+    status: { not_started: "Не розпочато", in_progress: "У процесі", submitted: "Оцінювання", graded: "Завершено", manual_review: "Перевірка" },
+    footer: "Система практики Python · автоматично згенеровано в консолі адміністратора",
+  },
+};
+
+const mean = (arr) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null);
+const bar10 = (rate) => { const n = Math.max(0, Math.min(10, Math.round(rate / 10))); return "█".repeat(n) + "░".repeat(10 - n); };
+function chunkArr(arr, n) { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; }
+
 function renderReportList() {
   const el = document.getElementById("reportList");
   if (!anStudents.length) {
@@ -1121,23 +1177,48 @@ document.getElementById("btnGenerateMd").addEventListener("click", async (ev) =>
     alert("리포트를 생성할 학생을 한 명 이상 선택하세요.");
     return;
   }
+  const lang = document.getElementById("reportLang")?.value || "ko";
   const btn = ev.currentTarget;
   btn.disabled = true;
   const orig = btn.innerHTML;
-  btn.textContent = "생성 중…";
+  btn.textContent = "생성 중… (AI 분석)";
   try {
-    const { md, asgIds } = await buildReportMarkdown(ids);
+    const data = await gatherReportData(ids);
+    const metricsByStu = {};
+    ids.forEach((sid) => { metricsByStu[sid] = computeMetrics(sid, data); });
+
+    // AI 서술 분석 (실패해도 통계 리포트는 생성)
+    const analyses = {};
+    const token = await getToken();
+    if (token) {
+      try {
+        const resp = await fetch(`${API_BASE}/api/report`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({
+            language: lang,
+            students: ids.map((sid) => ({ code: anStuById[sid]?.student_code, name: anStuById[sid]?.name, stats: metricsByStu[sid] })),
+          }),
+        });
+        const d = await resp.json().catch(() => ({}));
+        if (resp.ok) (d.analyses || []).forEach((a) => { analyses[a.code] = a; });
+        else console.warn("[report] AI 분석 실패:", d.error || resp.status);
+      } catch (e) { console.warn("[report] AI 분석 오류:", e); }
+    }
+
+    const md = buildReport(ids, metricsByStu, analyses, lang, data);
     document.getElementById("mdPreview").value = md;
     const fname = ids.length === 1
-      ? `growth_report_${anStuById[ids[0]]?.student_code || ids[0]}.md`
-      : `growth_report_${ids.length}_students.md`;
+      ? `growth_report_${anStuById[ids[0]]?.student_code || ids[0]}_${lang}.md`
+      : `growth_report_${ids.length}students_${lang}.md`;
     downloadFile(md, fname, "text/markdown;charset=utf-8;");
 
     // report_exports 에 기록 (실패해도 다운로드는 완료됨)
     const { data: { user } } = await window.sb.auth.getUser();
     const { error: repErr } = await window.sb.from("report_exports").insert({
       student_id: ids.length === 1 ? ids[0] : null,
-      selected_assignment_ids: asgIds,
+      selected_assignment_ids: data.asgIds,
+      export_data: { language: lang, metrics: metricsByStu },
       markdown_content: md,
       exported_by: user?.id || null,
     });
@@ -1151,72 +1232,172 @@ document.getElementById("btnGenerateMd").addEventListener("click", async (ev) =>
   }
 });
 
-// 선택 학생들의 실제 제출 데이터 + AI 코드 피드백을 취합해 Markdown 생성
-async function buildReportMarkdown(studentIds) {
-  const selAsg = anAssignments.filter((a) => studentIds.includes(a.student_id));
-  const asgIds = selAsg.map((a) => a.id);
-
-  // answers → code_feedback 로 강점/보완점 취합
-  const fbByAsg = {}; // assignment_id -> { strengths:Set, issues:Set }
+// 선택 학생들의 answers / questions / code_feedback 로드 (관리자 RLS)
+async function gatherReportData(studentIds) {
+  const asg = anAssignments.filter((a) => studentIds.includes(a.student_id));
+  const asgToStu = {}; asg.forEach((a) => { asgToStu[a.id] = a.student_id; });
+  const asgIds = asg.map((a) => a.id);
+  const answers = [], qMap = {}, fbByAns = {};
   if (asgIds.length) {
-    const { data: ans } = await window.sb.from("answers").select("id, assignment_id").in("assignment_id", asgIds);
-    const ansToAsg = {};
-    (ans || []).forEach((a) => { ansToAsg[a.id] = a.assignment_id; });
-    const ansIds = (ans || []).map((a) => a.id);
-    if (ansIds.length) {
-      const { data: fbs } = await window.sb.from("code_feedback").select("answer_id, strengths, issues").in("answer_id", ansIds);
-      (fbs || []).forEach((f) => {
-        const aid = ansToAsg[f.answer_id];
-        if (!aid) return;
-        fbByAsg[aid] = fbByAsg[aid] || { strengths: new Set(), issues: new Set() };
-        (Array.isArray(f.strengths) ? f.strengths : []).forEach((x) => fbByAsg[aid].strengths.add(String(x)));
-        (Array.isArray(f.issues) ? f.issues : []).forEach((x) => fbByAsg[aid].issues.add(String(x)));
-      });
+    for (const c of chunkArr(asgIds, 150)) {
+      const { data } = await window.sb.from("answers")
+        .select("id, assignment_id, question_id, is_correct, score").in("assignment_id", c);
+      answers.push(...(data || []));
+    }
+    const qIds = [...new Set(answers.map((a) => a.question_id))];
+    for (const c of chunkArr(qIds, 150)) {
+      const { data } = await window.sb.from("questions")
+        .select("id, concept, question_type, max_score").in("id", c);
+      (data || []).forEach((q) => { qMap[q.id] = q; });
+    }
+    const ansIds = answers.map((a) => a.id);
+    for (const c of chunkArr(ansIds, 150)) {
+      const { data } = await window.sb.from("code_feedback")
+        .select("answer_id, strengths, issues").in("answer_id", c);
+      (data || []).forEach((f) => { fbByAns[f.answer_id] = f; });
     }
   }
+  const ansByStu = {};
+  answers.forEach((a) => { const sid = asgToStu[a.assignment_id]; if (sid) (ansByStu[sid] ||= []).push(a); });
+  return { asg, asgIds, ansByStu, qMap, fbByAns };
+}
 
-  const today = new Date().toLocaleDateString("ko-KR");
-  let md = `# 학생 성장 분석 리포트\n\n`;
-  md += `- 생성일: ${today}\n`;
-  md += `- 대상 학생 수: ${studentIds.length}명\n`;
-  md += `- 생성 방식: 제출 데이터 + AI 코드 피드백 자동 취합 (추가 AI 분석은 미포함)\n\n`;
-  md += `> 본 문서는 학생 학습 데이터를 Markdown으로 정리한 것입니다. 필요 시 외부 AI 분석 도구의 입력으로 활용할 수 있습니다.\n\n`;
-  md += `---\n\n`;
+// 학생 1명의 지표 계산 (AI 입력 + Markdown 양쪽에 사용)
+function computeMetrics(sid, data) {
+  const mine = anAssignments.filter((a) => a.student_id === sid);
+  const classAsg = mine.filter((a) => a.class_id);
+  const bonusAsg = mine.filter((a) => a.bonus_topic_id);
+  const isDone = (a) => a.status === "graded" || a.status === "manual_review";
+  const started = (a) => a.status && a.status !== "not_started";
+
+  const classesTotal = anClasses.length;
+  const classesStarted = new Set(classAsg.filter(started).map((a) => a.class_id)).size;
+  const classesDone = new Set(classAsg.filter(isDone).map((a) => a.class_id)).size;
+  const diffAttempts = { easy: 0, medium: 0, hard: 0 };
+  classAsg.filter(started).forEach((a) => { if (diffAttempts[a.difficulty] != null) diffAttempts[a.difficulty]++; });
+
+  const gradedClass = classAsg.filter(isDone);
+  const scored = gradedClass.filter((a) => Number.isFinite(a.total_score));
+  const avgTotal = mean(scored.map((a) => a.total_score));
+  const byDifficulty = {};
+  ["easy", "medium", "hard"].forEach((d) => {
+    const g = scored.filter((a) => a.difficulty === d);
+    byDifficulty[d] = g.length ? { avg: mean(g.map((a) => a.total_score)), count: g.length } : null;
+  });
+  const objAvg = mean(gradedClass.map((a) => a.objective_score).filter(Number.isFinite));
+  const codeAvg = mean(gradedClass.map((a) => a.code_score).filter(Number.isFinite));
+  const trend = scored.slice()
+    .sort((a, b) => new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0))
+    .map((a) => ({ label: `${classLabel(a.class_id)} ${a.difficulty || ""}`.trim(), score: a.total_score }));
+  const timeVals = gradedClass.map((a) => a.total_duration_seconds).filter((v) => Number.isFinite(v) && v > 0);
+  const avgTimeMin = timeVals.length ? Math.round(mean(timeVals) / 60) : null;
+
+  // 개념/유형 정확도 + 코드 피드백
+  const ans = data.ansByStu[sid] || [];
+  const cAgg = {}, tAgg = {};
+  const strengths = new Set(), issues = new Set();
+  ans.forEach((a) => {
+    const f = data.fbByAns[a.id];
+    if (f) { (f.strengths || []).forEach((x) => strengths.add(String(x))); (f.issues || []).forEach((x) => issues.add(String(x))); }
+    const q = data.qMap[a.question_id];
+    if (!q || a.is_correct == null) return;
+    const c = q.concept || "general";
+    (cAgg[c] ||= { correct: 0, total: 0 }); cAgg[c].total++; if (a.is_correct) cAgg[c].correct++;
+    (tAgg[q.question_type] ||= { correct: 0, total: 0 }); tAgg[q.question_type].total++; if (a.is_correct) tAgg[q.question_type].correct++;
+  });
+  const concepts = Object.entries(cAgg)
+    .map(([concept, v]) => ({ concept, correct: v.correct, total: v.total, rate: Math.round((v.correct / v.total) * 100) }))
+    .sort((a, b) => b.rate - a.rate);
+  const types = Object.entries(tAgg)
+    .map(([type, v]) => ({ type, correct: v.correct, total: v.total, rate: Math.round((v.correct / v.total) * 100) }));
+
+  return {
+    participation: { classesTotal, classesStarted, classesDone, diffAttempts, bonusStarted: bonusAsg.filter(started).length, bonusDone: bonusAsg.filter(isDone).length, avgTimeMin },
+    scores: { avgTotal, byDifficulty, objAvg, codeAvg, trend },
+    concepts, types,
+    codeFeedback: { strengths: [...strengths], issues: [...issues] },
+    assignmentsCount: mine.length,
+  };
+}
+
+// 지표 + AI 서술을 합쳐 (선택 언어) Markdown 생성
+function buildReport(studentIds, metricsByStu, analyses, lang, data) {
+  const L = REPORT_L10N[lang] || REPORT_L10N.ko;
+  const locale = lang === "ko" ? "ko-KR" : lang === "uk" ? "uk-UA" : "en-US";
+  const today = new Date().toLocaleDateString(locale);
+  let md = `# ${L.title}\n\n`;
+  md += `- ${L.generated}: ${today}\n`;
+  md += `- ${L.students}: ${studentIds.length}${L.count}\n`;
+  md += `\n> ${L.note}\n\n---\n\n`;
 
   studentIds.forEach((sid, i) => {
     const s = anStuById[sid];
-    const mine = anAssignments
-      .filter((a) => a.student_id === sid)
-      .sort((a, b) => (a.class_id || "").localeCompare(b.class_id || ""));
+    const m = metricsByStu[sid];
+    const an = analyses[s?.student_code] || null;
     md += `## ${i + 1}. ${s?.name || "?"} (${s?.student_code || sid})\n\n`;
 
-    const done = mine.filter((a) => a.status === "graded" || a.status === "manual_review");
-    const scored = done.filter((a) => Number.isFinite(a.total_score));
-    const avg = scored.length ? Math.round(scored.reduce((x, a) => x + a.total_score, 0) / scored.length) : null;
-    md += `- 총 과제: ${mine.length}건 · 완료 ${done.length}건 · 평균 점수 ${avg ?? "-"}\n\n`;
+    if (an?.summary) md += `${an.summary}\n\n`;
 
+    // 참여 현황
+    const p = m.participation;
+    md += `### ${L.participation}\n`;
+    md += `- ${L.lessons_done}: **${p.classesDone}** / ${p.classesTotal} · ${L.lessons_started}: ${p.classesStarted}\n`;
+    md += `- ${L.diff_attempts}: ${L.diff.easy} ${p.diffAttempts.easy} · ${L.diff.medium} ${p.diffAttempts.medium} · ${L.diff.hard} ${p.diffAttempts.hard}\n`;
+    md += `- ${L.bonus}: ${p.bonusDone} / ${p.bonusStarted}\n`;
+    if (p.avgTimeMin != null) md += `- ${L.avg_time}: ${p.avgTimeMin}${L.min}\n`;
+    md += `\n`;
+
+    // 점수
+    const sc = m.scores;
+    md += `### ${L.scores}\n`;
+    md += `- ${L.avg_score}: **${sc.avgTotal ?? "-"}**\n`;
+    const bd = ["easy", "medium", "hard"]
+      .map((d) => (sc.byDifficulty[d] ? `${L.diff[d]} ${sc.byDifficulty[d].avg}(${sc.byDifficulty[d].count})` : null))
+      .filter(Boolean).join(" · ");
+    if (bd) md += `- ${L.by_difficulty}: ${bd}\n`;
+    if (sc.objAvg != null || sc.codeAvg != null) md += `- ${L.obj_code}: ${sc.objAvg ?? "-"} / ${sc.codeAvg ?? "-"}\n`;
+    md += `\n`;
+    if (sc.trend.length) {
+      md += `**${L.trend}**\n\n` + sc.trend.map((t) => `- ${t.label}: ${t.score}`).join("\n") + "\n\n";
+    }
+
+    // 개념별 정확도
+    if (m.concepts.length) {
+      md += `### ${L.concept_acc}\n\n`;
+      md += `| ${L.col_concept} | ${L.col_rate} | ${L.col_correct} |\n|---|---|---|\n`;
+      m.concepts.forEach((c) => { md += `| ${c.concept} | \`${bar10(c.rate)}\` ${c.rate}% | ${c.correct}/${c.total} |\n`; });
+      md += `\n`;
+    }
+
+    // 유형별 정확도
+    if (m.types.length) {
+      md += `### ${L.type_acc}\n` + m.types.map((t) => `- ${t.type}: ${t.rate}% (${t.correct}/${t.total})`).join("\n") + "\n\n";
+    }
+
+    // AI 강점/보완/권장
+    if (an) {
+      if (an.strengths?.length) md += `### ${L.ai_strengths}\n` + an.strengths.map((x) => `- ${x}`).join("\n") + "\n\n";
+      if (an.weaknesses?.length) md += `### ${L.ai_weak}\n` + an.weaknesses.map((x) => `- ${x}`).join("\n") + "\n\n";
+      if (an.recommendations?.length) md += `### ${L.ai_reco}\n` + an.recommendations.map((x) => `- ${x}`).join("\n") + "\n\n";
+    }
+
+    // 과제 상세
+    const mine = anAssignments.filter((a) => a.student_id === sid)
+      .sort((a, b) => (a.class_id || "z").localeCompare(b.class_id || "z"));
     if (mine.length) {
-      md += `| 수업 | 난이도 | 상태 | 총점 | 객관식 | 코드 | 풀이시간 | 제출 |\n`;
-      md += `|---|---|---|---|---|---|---|---|\n`;
+      md += `### ${L.detail}\n\n`;
+      md += `| ${L.col_lesson} | ${L.col_diff} | ${L.col_status} | ${L.col_total} | ${L.col_obj} | ${L.col_code} | ${L.col_time} | ${L.col_sub} |\n|---|---|---|---|---|---|---|---|\n`;
       mine.forEach((a) => {
-        const cls = a.class_id ? classLabel(a.class_id) : a.bonus_topic_id ? "Bonus" : "-";
-        md += `| ${cls} | ${a.difficulty ? DIFF_KO[a.difficulty] : "-"} | ${STATUS_KO[a.status] || a.status || "-"} | ${Number.isFinite(a.total_score) ? a.total_score : "-"} | ${a.objective_score ?? "-"} | ${a.code_score ?? "-"} | ${fmtMin(a.total_duration_seconds)} | ${a.submitted_at ? fmtDateTime(a.submitted_at) : "-"} |\n`;
+        const cls = a.class_id ? classLabel(a.class_id) : a.bonus_topic_id ? L.bonus : "-";
+        const tm = a.total_duration_seconds ? Math.round(a.total_duration_seconds / 60) + L.min : "-";
+        md += `| ${cls} | ${a.difficulty ? L.diff[a.difficulty] : "-"} | ${L.status[a.status] || a.status || "-"} | ${Number.isFinite(a.total_score) ? a.total_score : "-"} | ${a.objective_score ?? "-"} | ${a.code_score ?? "-"} | ${tm} | ${a.submitted_at ? fmtDateTime(a.submitted_at) : "-"} |\n`;
       });
       md += `\n`;
     }
 
-    const strengths = new Set(), issues = new Set();
-    mine.forEach((a) => {
-      const f = fbByAsg[a.id];
-      if (f) { f.strengths.forEach((x) => strengths.add(x)); f.issues.forEach((x) => issues.add(x)); }
-    });
-    md += `**강점 (AI 코드 피드백 취합):**\n`;
-    md += strengths.size ? [...strengths].map((x) => `- ${x}`).join("\n") + "\n" : "- (데이터 없음)\n";
-    md += `\n**보완 필요 (AI 코드 피드백 취합):**\n`;
-    md += issues.size ? [...issues].map((x) => `- ${x}`).join("\n") + "\n" : "- (데이터 없음)\n";
-    md += `\n---\n\n`;
+    md += `---\n\n`;
   });
 
-  md += `_Python 과제 관리 시스템 · 관리자 콘솔에서 자동 생성됨_\n`;
-  return { md, asgIds };
+  md += `_${L.footer}_\n`;
+  return md;
 }

@@ -262,10 +262,19 @@
                 </div>
                 <div class="card-body">
                   <div class="select-list" id="reportList"></div>
+                  <label class="report-lang" style="display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13px">
+                    <span class="muted">레포트 언어</span>
+                    <select id="reportLang" class="input" style="flex:0 0 auto">
+                      <option value="ko">한국어</option>
+                      <option value="en">English</option>
+                      <option value="uk">Українська</option>
+                    </select>
+                    <span class="muted" style="font-size:11px">· AI 성장 분석 포함</span>
+                  </label>
                   <button
                     class="btn btn-primary btn-block"
                     id="btnGenerateMd"
-                    style="margin-top: 16px"
+                    style="margin-top: 12px"
                   >
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                     Markdown 생성 및 다운로드
@@ -295,6 +304,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../../supabase-config.js"></script>
-    <script src="dashboard.js?v=6"></script>
+    <script src="dashboard.js?v=7"></script>
   </body>
 </html>
