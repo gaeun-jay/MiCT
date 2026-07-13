@@ -15,22 +15,21 @@ import { createClient } from "@supabase/supabase-js";
 
 const MODEL = "claude-opus-4-8";
 
-const SYSTEM_PROMPT = `You are grading beginner Python students' code for a class assignment.
-The student's code is NOT executed — evaluate it by reading it.
+const SYSTEM_PROMPT = `You are grading beginner Python students' code. The code is NOT executed — evaluate it by reading it.
 
-Rules:
-- Never claim you executed or ran the code.
-- Do not deduct points only because the solution differs from a model answer; accept multiple valid approaches.
-- Judge primarily by whether the code meets the stated requirements.
-- Check the student stayed within the concepts they have been taught.
-- If you are not confident, classify as "manual_review".
-- Do not invent runtime errors that do not exist.
-- Keep feedback friendly and easy for a beginner to understand; avoid harsh or verbose wording.
-- Be specific about what was done well and what to fix.
+Grade STRICTLY against the rubric provided for each item:
+- Award each rubric item its full points ONLY if the code fully satisfies that specific criterion.
+- If a bug — even a single-line mistake such as range(1, 10) instead of range(1, 11), a missing print, or wrong output — causes a requirement to fail, the rubric item(s) it affects get 0. Do NOT give partial credit for code that is "almost right"; correctness of the actual result is what matters.
+- Accept any valid approach that meets a requirement; never deduct for style, variable names, or a different-but-correct solution.
+- Mark status "correct" ONLY when EVERY rubric item is fully satisfied.
+- Mark "needs_revision" when the attempt is on the right track but at least one rubric item fails.
+- Mark "manual_review" only when the code is too incomplete or ambiguous to judge.
+- Never claim you executed the code; never invent runtime errors that do not exist.
+- Keep feedback friendly and specific for a beginner; be concise.
 
 For each item return:
 - status: "correct" | "needs_revision" | "manual_review"
-- score: integer from 0 to the item's max_score
+- score: integer = the SUM of awarded rubric points, out of the item's "rubric_total" (NOT out of 100, NOT out of max_score)
 - strengths: short bullet strings
 - issues: short bullet strings (empty array if none)
 - comment: one or two sentences of overall feedback
@@ -68,6 +67,19 @@ function setCors(res) {
 }
 function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
 
+// 루브릭 항목 점수 합
+function rubricTotal(rubric) {
+  if (!Array.isArray(rubric)) return 0;
+  return rubric.reduce((a, it) => a + (Number(it?.score) || 0), 0);
+}
+// Claude 원점수(루브릭 만점 기준) → 문제 배점(max_score)으로 환산
+function scaleScore(raw, rTotal, maxScore) {
+  const m = Number(maxScore) || 0;
+  const r = Number(raw) || 0;
+  if (!rTotal) return Math.max(0, Math.min(r, m)); // 루브릭 없으면 원점수를 배점 한도로
+  return Math.max(0, Math.min(Math.round((r / rTotal) * m), m));
+}
+
 // items → Claude 평가 → [{index,status,score,strengths,issues,comment,confidence}]
 async function gradeItems(anthropic, items) {
   const payload = items.map((it, i) => ({
@@ -78,7 +90,7 @@ async function gradeItems(anthropic, items) {
     allowed_concepts: it.allowed_concepts || [],
     requirements: it.requirements || [],
     rubric: it.rubric || [],
-    max_score: Number.isFinite(it.max_score) ? it.max_score : 10,
+    rubric_total: rubricTotal(it.rubric),
   }));
 
   const message = await anthropic.messages.create({
@@ -91,8 +103,9 @@ async function gradeItems(anthropic, items) {
       {
         role: "user",
         content:
-          "Grade each code submission below. Return one result per item, " +
-          "matching each result's `index` to the item's `index`.\n\n" +
+          "Grade each code submission below strictly against its rubric. " +
+          "For each item, `score` must be the total awarded rubric points out of that item's `rubric_total`. " +
+          "Match each result's `index` to the item's `index`.\n\n" +
           JSON.stringify({ items: payload }, null, 2),
       },
     ],
@@ -182,6 +195,8 @@ export default async function handler(req, res) {
         for (const r of graded.parsed) {
           const q = codeQs[r.index];
           if (!q) continue;
+          // 루브릭 원점수 → 문제 배점(max_score)으로 환산
+          const scaled = scaleScore(r.score, rubricTotal(q.rubric), q.max_score);
           // 답안 행 확보
           let answerId = ansByQ[q.id]?.id;
           if (!answerId) {
@@ -197,7 +212,7 @@ export default async function handler(req, res) {
             await admin.from("code_feedback").insert({
               answer_id: answerId,
               status: r.status,
-              score: r.score,
+              score: scaled,
               strengths: r.strengths || [],
               issues: r.issues || [],
               comment: r.comment || "",
@@ -205,15 +220,16 @@ export default async function handler(req, res) {
               raw_response: r,
             });
             await admin.from("answers")
-              .update({ score: r.score, is_correct: r.status === "correct", updated_at: new Date().toISOString() })
+              .update({ score: scaled, is_correct: r.status === "correct", updated_at: new Date().toISOString() })
               .eq("id", answerId);
           }
-          codeScore += Number(r.score) || 0;
+          codeScore += scaled;
           if (r.status === "manual_review") anyReview = true;
           results.push({
             question_id: q.id,
             status: r.status,
-            score: r.score,
+            score: scaled,
+            max_score: q.max_score,
             strengths: r.strengths || [],
             issues: r.issues || [],
             comment: r.comment || "",
@@ -245,9 +261,10 @@ export default async function handler(req, res) {
     const graded = await gradeItems(anthropic, items);
     const results = graded.parsed.map((r) => {
       const src = items[r.index] || {};
+      const scaled = scaleScore(r.score, rubricTotal(src.rubric), Number.isFinite(src.max_score) ? src.max_score : rubricTotal(src.rubric));
       return {
         question_id: src.question_id ?? null,
-        status: r.status, score: r.score,
+        status: r.status, score: scaled,
         strengths: r.strengths || [], issues: r.issues || [],
         comment: r.comment || "", confidence: r.confidence ?? null,
       };

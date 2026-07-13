@@ -286,7 +286,7 @@ function renderCodeResults(results) {
     const strengths = (r.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     const issues = (r.issues || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     el.innerHTML =
-      `<p class="r-title">${STATUS[r.status] || r.status} · ${r.score} pts</p>
+      `<p class="r-title">${STATUS[r.status] || r.status} · ${r.score}${r.max_score ? ` / ${r.max_score}` : ""} pts</p>
        <p class="r-comment">${escapeHtml(r.comment || "")}</p>
        ${strengths ? `<p class="r-comment"><b>Strengths</b><ul>${strengths}</ul></p>` : ""}
        ${issues ? `<p class="r-comment"><b>To fix</b><ul>${issues}</ul></p>` : ""}`;
