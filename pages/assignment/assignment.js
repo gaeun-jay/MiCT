@@ -236,6 +236,13 @@ submitBtn.addEventListener("click", async () => {
 });
 
 // ---- 결과 렌더 ----
+// 상태 아이콘 (이모지 대신 인라인 SVG)
+const ICON = {
+  ok: `<svg class="r-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`,
+  wrong: `<svg class="r-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+  pending: `<svg class="r-ico r-ico--spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>`,
+};
+
 function correctText(r) {
   const q = questionsById[r.question_id] || {};
   const c = r.correct;
@@ -256,18 +263,18 @@ function renderObjectiveResults(obj) {
     if (r.is_correct) {
       el.className = "q-result show q-result--ok";
       qEl?.classList.add("graded-ok");
-      el.innerHTML = `<p class="r-title">✓ Correct</p>`;
+      el.innerHTML = `<p class="r-title">${ICON.ok} Correct</p>`;
     } else {
       el.className = "q-result show q-result--wrong";
       qEl?.classList.add("graded-wrong");
-      el.innerHTML = `<p class="r-title">✗ Incorrect</p><p class="r-comment">Answer: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
+      el.innerHTML = `<p class="r-title">${ICON.wrong} Incorrect</p><p class="r-comment">Answer: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
     }
   });
 }
 function markCodePending() {
   questions.filter((q) => q.question_type === "code").forEach((q) => {
     const el = document.getElementById(`result-${q.id}`);
-    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">⏳ Grading with AI…</p>`; }
+    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">${ICON.pending} Grading with AI…</p>`; }
   });
 }
 function markCodeError(msg) {
@@ -279,6 +286,7 @@ function markCodeError(msg) {
 function renderCodeResults(results) {
   const STATUS = { correct: "Correct", needs_revision: "Needs revision", manual_review: "Manual review" };
   const CLS = { correct: "q-result--ok", needs_revision: "q-result--revise", manual_review: "q-result--review" };
+  const STATUS_ICON = { correct: ICON.ok, needs_revision: ICON.wrong, manual_review: ICON.pending };
   results.forEach((r) => {
     const el = document.getElementById(`result-${r.question_id}`);
     if (!el) return;
@@ -286,7 +294,7 @@ function renderCodeResults(results) {
     const strengths = (r.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     const issues = (r.issues || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     el.innerHTML =
-      `<p class="r-title">${STATUS[r.status] || r.status} · ${r.score}${r.max_score ? ` / ${r.max_score}` : ""} pts</p>
+      `<p class="r-title">${STATUS_ICON[r.status] || ICON.pending} ${STATUS[r.status] || r.status} · ${r.score}${r.max_score ? ` / ${r.max_score}` : ""} pts</p>
        <p class="r-comment">${escapeHtml(r.comment || "")}</p>
        ${strengths ? `<p class="r-comment"><b>Strengths</b><ul>${strengths}</ul></p>` : ""}
        ${issues ? `<p class="r-comment"><b>To fix</b><ul>${issues}</ul></p>` : ""}`;

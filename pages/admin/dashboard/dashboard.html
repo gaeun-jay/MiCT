@@ -96,6 +96,7 @@
                         <th>나이</th>
                         <th>비밀번호 변경 필요</th>
                         <th>마지막 로그인 일시</th>
+                        <th>비밀번호 재발급</th>
                       </tr>
                     </thead>
                     <tbody id="studentTbody"></tbody>
@@ -154,16 +155,9 @@
             <div class="section">
               <h2 class="section-title">학생 학습 현황</h2>
               <p class="section-desc">
-                반별 실시간 학습 통계와 제출 현황을 확인합니다.
+                수업별 실시간 학습 통계와 제출 현황을 확인합니다.
               </p>
-              <div class="pill-tabs" id="classTabs">
-                <button class="pill-tab active" data-class="Class 1">Class 1</button>
-                <button class="pill-tab" data-class="Class 2">Class 2</button>
-                <button class="pill-tab" data-class="Class 3">Class 3</button>
-                <button class="pill-tab" data-class="Class 4">Class 4</button>
-                <button class="pill-tab" data-class="Class 5">Class 5</button>
-                <button class="pill-tab" data-class="Bonus">Bonus</button>
-              </div>
+              <div class="pill-tabs" id="classTabs"><!-- 수업 탭은 DB classes 기준으로 렌더됨 --></div>
             </div>
 
             <!-- Stat tiles -->
@@ -251,10 +245,10 @@
             <div class="note section">
               <span class="ico"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
               <span>
-                이 기능은 <b>AI를 호출하지 않습니다.</b> 선택한 학생들의 제출
-                데이터를 그대로 수집해 Markdown 문서로 정리·다운로드할 뿐입니다.
-                생성된 Markdown은 이후 별도의 AI 분석 도구 입력값으로 활용할 수
-                있습니다.
+                이 기능은 <b>AI를 새로 호출하지 않습니다.</b> 선택한 학생들의 실제
+                제출 데이터와 채점 시 저장된 <b>AI 코드 피드백(강점·보완점)</b>을
+                취합해 Markdown 문서로 정리·다운로드합니다. 생성된 Markdown은
+                이후 별도의 AI 분석 도구 입력값으로도 활용할 수 있습니다.
               </span>
             </div>
 
@@ -301,6 +295,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../../supabase-config.js"></script>
-    <script src="dashboard.js?v=4"></script>
+    <script src="dashboard.js?v=5"></script>
   </body>
 </html>

@@ -24,60 +24,114 @@ document.getElementById("logoutBtn")?.addEventListener("click", () =>
 /* ---------------- 학생 목록 (DB에서 로드) ---------------- */
 let students = [];   // students 테이블 rows
 
-// 학습 현황 (학생별 제출 데이터) — 성장 리포트에도 재사용 (아직 mock)
-const learning = [
-  {
-    id: "Student001", name: "김민준", difficulty: "중", done: true,
-    score: 92, time: "18분", submittedAt: "2026-07-11 14:20",
-    class: "Class 1", strengths: "반복문 활용, 조건 분기 처리",
-    weaknesses: "함수 분리 미흡", topics: ["for/while", "if-else", "리스트"],
-  },
-  {
-    id: "Student002", name: "이서연", difficulty: "상", done: true,
-    score: 88, time: "25분", submittedAt: "2026-07-11 15:02",
-    class: "Class 1", strengths: "알고리즘 설계, 예외 처리",
-    weaknesses: "시간 복잡도 최적화", topics: ["딕셔너리", "재귀", "정렬"],
-  },
-  {
-    id: "Student003", name: "박도윤", difficulty: "하", done: false,
-    score: null, time: "-", submittedAt: "-",
-    class: "Class 2", strengths: "기본 문법 이해",
-    weaknesses: "문제 완주율, 디버깅", topics: ["변수", "입출력"],
-  },
-  {
-    id: "Student004", name: "최지우", difficulty: "중", done: true,
-    score: 76, time: "31분", submittedAt: "2026-07-11 13:45",
-    class: "Class 2", strengths: "문자열 처리",
-    weaknesses: "인덱싱 오류, 경계 조건", topics: ["문자열", "슬라이싱"],
-  },
-  {
-    id: "Student005", name: "정하은", difficulty: "상", done: true,
-    score: 95, time: "22분", submittedAt: "2026-07-11 16:10",
-    class: "Class 3", strengths: "논리적 문제 분해, 코드 가독성",
-    weaknesses: "주석 부족", topics: ["클래스", "예외", "파일 I/O"],
-  },
-  {
-    id: "Student006", name: "David Kim", difficulty: "중", done: false,
-    score: null, time: "-", submittedAt: "-",
-    class: "Class 3", strengths: "빠른 시도",
-    weaknesses: "미제출 과제 다수", topics: ["함수", "리스트"],
-  },
-];
+/* ---------------- 학습 현황 / 성장 리포트 (DB 실데이터) ----------------
+   assignments + students + classes 를 로드해 수업별 통계/차트/리포트에 재사용 */
+let anClasses = [];        // [{id, class_number, title}]
+let anAssignments = [];    // 모든 assignments rows
+let anStudents = [];       // 모든 students (id, student_code, name)
+let anStuById = {};        // id -> student
+let currentClassId = null; // 선택된 class uuid, 또는 "bonus"
 
-/* 반별 통계 (Mock) */
-const classStats = {
-  "Class 1": { total: 24, started: 21, done: 18, avgScore: 84, avgTime: "21분", review: 2, difficulty: [6, 12, 6], scores: [1, 2, 4, 8, 9] },
-  "Class 2": { total: 22, started: 17, done: 13, avgScore: 78, avgTime: "27분", review: 4, difficulty: [9, 9, 4], scores: [2, 3, 6, 7, 4] },
-  "Class 3": { total: 25, started: 23, done: 20, avgScore: 88, avgTime: "19분", review: 1, difficulty: [4, 11, 10], scores: [0, 1, 3, 9, 12] },
-  "Class 4": { total: 20, started: 15, done: 11, avgScore: 73, avgTime: "30분", review: 5, difficulty: [10, 7, 3], scores: [3, 4, 5, 5, 3] },
-  "Class 5": { total: 23, started: 20, done: 16, avgScore: 81, avgTime: "24분", review: 3, difficulty: [7, 10, 6], scores: [1, 3, 5, 7, 7] },
-  "Bonus":   { total: 12, started: 8,  done: 5,  avgScore: 90, avgTime: "35분", review: 1, difficulty: [1, 4, 7], scores: [0, 0, 1, 4, 7] },
-};
+const DIFF_KO = { easy: "하", medium: "중", hard: "상" };
+const DIFF_BADGE = { easy: "badge-green", medium: "badge-blue", hard: "badge-amber" };
 
-const trendData = {
-  labels: ["월", "화", "수", "목", "금"],
-  submissions: [8, 14, 11, 19, 23],
-};
+function escHtml(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function fmtMin(sec) {
+  if (!sec || sec <= 0) return "-";
+  return `${Math.round(sec / 60)}분`;
+}
+function fmtDateTime(ts) {
+  return ts ? new Date(ts).toLocaleString("ko-KR") : "-";
+}
+
+// 특정 class(또는 "bonus")의 assignments
+function assignmentsForClass(classId) {
+  if (classId === "bonus") return anAssignments.filter((a) => a.bonus_topic_id);
+  return anAssignments.filter((a) => a.class_id === classId);
+}
+function classLabel(classId) {
+  if (classId === "bonus") return "Bonus";
+  const c = anClasses.find((x) => x.id === classId);
+  return c ? `Class ${c.class_number}` : "-";
+}
+
+async function loadAnalytics() {
+  const [{ data: cls }, { data: asg }, { data: stu }] = await Promise.all([
+    window.sb.from("classes").select("id, class_number, title").order("class_number"),
+    window.sb.from("assignments").select(
+      "id, student_id, class_id, bonus_topic_id, difficulty, status, submitted_at, graded_at, total_duration_seconds, total_score, objective_score, code_score"
+    ),
+    window.sb.from("students").select("id, student_code, name").order("student_code"),
+  ]);
+  anClasses = cls || [];
+  anAssignments = asg || [];
+  anStudents = stu || [];
+  anStuById = {};
+  anStudents.forEach((s) => { anStuById[s.id] = s; });
+  if (!currentClassId) currentClassId = anClasses[0]?.id || "bonus";
+
+  renderClassTabs();
+  renderStats();
+  renderStatusTable();
+  renderReportList();
+  if (chartsBuilt) updateCharts();
+}
+loadAnalytics();
+
+// 수업별 통계 집계 (실데이터)
+function computeClassStats(classId) {
+  const rows = assignmentsForClass(classId);
+  const total = anStudents.length;
+  const startedStu = new Set(rows.filter((r) => r.status && r.status !== "not_started").map((r) => r.student_id));
+  const doneRows = rows.filter((r) => r.status === "graded" || r.status === "manual_review");
+  const doneStu = new Set(doneRows.map((r) => r.student_id));
+  const reviewRows = rows.filter((r) => r.status === "manual_review" || r.status === "submitted");
+
+  const scored = doneRows.filter((r) => Number.isFinite(r.total_score));
+  const avgScore = scored.length ? Math.round(scored.reduce((a, r) => a + r.total_score, 0) / scored.length) : 0;
+  const durRows = doneRows.filter((r) => Number.isFinite(r.total_duration_seconds) && r.total_duration_seconds > 0);
+  const avgSec = durRows.length ? Math.round(durRows.reduce((a, r) => a + r.total_duration_seconds, 0) / durRows.length) : 0;
+
+  const difficulty = ["easy", "medium", "hard"].map(
+    (d) => new Set(rows.filter((r) => r.difficulty === d).map((r) => r.student_id)).size
+  );
+  const scores = [0, 0, 0, 0, 0];
+  scored.forEach((r) => {
+    const s = r.total_score;
+    const i = s < 60 ? 0 : s < 70 ? 1 : s < 80 ? 2 : s < 90 ? 3 : 4;
+    scores[i]++;
+  });
+
+  return {
+    total, started: startedStu.size, done: doneStu.size, review: reviewRows.length,
+    avgScore, avgTime: fmtMin(avgSec), difficulty, scores,
+  };
+}
+
+// 최근 7일 제출 추이 (실데이터)
+function computeTrend(classId) {
+  const rows = assignmentsForClass(classId).filter((r) => r.submitted_at);
+  const labels = [], counts = [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const next = new Date(d); next.setDate(d.getDate() + 1);
+    labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+    counts.push(rows.filter((r) => { const t = new Date(r.submitted_at); return t >= d && t < next; }).length);
+  }
+  return { labels, counts };
+}
+
+function renderClassTabs() {
+  const el = document.getElementById("classTabs");
+  const tabs = anClasses.map(
+    (c) => `<button class="pill-tab ${c.id === currentClassId ? "active" : ""}" data-class-id="${c.id}">Class ${c.class_number}</button>`
+  );
+  tabs.push(`<button class="pill-tab ${currentClassId === "bonus" ? "active" : ""}" data-class-id="bonus">Bonus</button>`);
+  el.innerHTML = tabs.join("");
+}
 
 /* =========================================================
    탭 전환
@@ -140,7 +194,7 @@ function escAttr(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g
 function renderStudents() {
   studentTbody.innerHTML = "";
   if (!students.length) {
-    studentTbody.innerHTML = `<tr><td colspan="5" class="muted">등록된 학생이 없습니다. CSV 업로드 또는 단일 생성으로 계정을 만드세요.</td></tr>`;
+    studentTbody.innerHTML = `<tr><td colspan="6" class="muted">등록된 학생이 없습니다. CSV 업로드 또는 단일 생성으로 계정을 만드세요.</td></tr>`;
     return;
   }
   students.forEach((s) => {
@@ -156,7 +210,10 @@ function renderStudents() {
           ${s.must_change_password ? "필요" : "완료"}
         </span>
       </td>
-      <td class="muted">${s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-"}</td>`;
+      <td class="muted">${s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-"}</td>
+      <td>
+        <button class="btn btn-sm reissue-btn" data-code="${s.student_code}" data-name="${escAttr(s.name)}">재발급</button>
+      </td>`;
     studentTbody.appendChild(tr);
   });
 }
@@ -186,6 +243,35 @@ studentTbody.addEventListener("change", async (e) => {
   if (error) { alert("이름 수정 실패: " + error.message); return; }
   const row = students.find((s) => s.id === id);
   if (row) row.name = name;
+});
+
+// 비밀번호 재발급 → /api/reset-password
+studentTbody.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".reissue-btn");
+  if (!btn) return;
+  const code = btn.dataset.code;
+  const name = btn.dataset.name || "";
+  if (!confirm(`${code} (${name})\n\n새 임시 비밀번호를 발급합니다. 기존 비밀번호는 즉시 무효화되고,\n다음 로그인 시 학생이 비밀번호를 변경해야 합니다.\n\n계속할까요?`)) return;
+
+  const token = await getToken();
+  if (!token) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); return; }
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "…";
+  try {
+    const resp = await fetch(`${API_BASE}/api/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ student_code: code }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) { alert("재발급 실패: " + (data.error || resp.status)); return; }
+    alert(`비밀번호 재발급 완료\n아이디: ${code}\n새 임시 비밀번호: ${data.password}\n\n이 비밀번호를 학생에게 전달하세요. (첫 로그인 시 변경됩니다.)`);
+    await loadStudents();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
 });
 
 // service_role 서버리스로 계정 생성 (공통)
@@ -608,7 +694,7 @@ problemGrid.addEventListener("change", async (e) => {
     }
     const detail = Object.entries(data.counts || {}).map(([d, n]) => `${d} ${n}`).join(", ");
     console.log("[문제 관리] DB 업로드:", file.name, data.total + "문제");
-    alert(`"${file.name}" 업로드 완료 🎉\nDB에 ${data.total}개 문제 등록 (${detail})`);
+    alert(`"${file.name}" 업로드 완료\nDB에 ${data.total}개 문제 등록 (${detail})`);
     await loadProblemGrid(); // 등록 문제수 갱신
     showPreview(key);
   } catch (err) {
@@ -650,12 +736,10 @@ problemGrid.addEventListener("click", async (e) => {
 /* =========================================================
    (B) 학습 현황 — 통계 카드 / 진행률 / 테이블
    ========================================================= */
-let currentClass = "Class 1";
-
 function renderStats() {
-  const st = classStats[currentClass];
-  const notStarted = st.total - st.started;
-  const completion = Math.round((st.done / st.total) * 100);
+  const st = computeClassStats(currentClassId);
+  const notStarted = Math.max(0, st.total - st.started);
+  const completion = st.total ? Math.round((st.done / st.total) * 100) : 0;
 
   const tiles = [
     { label: "전체 학생 수", value: st.total, cls: "" },
@@ -683,33 +767,46 @@ function renderStats() {
   bar.textContent = completion + "%";
   document.getElementById("progressLabel").textContent =
     `${st.done} / ${st.total}명 완료`;
-  document.getElementById("statusClassLabel").textContent = currentClass;
+  document.getElementById("statusClassLabel").textContent = classLabel(currentClassId);
 }
 
 function renderStatusTable() {
   const tbody = document.getElementById("statusTbody");
-  const diffBadge = { 하: "badge-green", 중: "badge-blue", 상: "badge-amber" };
-  tbody.innerHTML = learning
-    .map(
-      (r) => `
+  const rows = assignmentsForClass(currentClassId);
+  const byStu = {};
+  rows.forEach((r) => { byStu[r.student_id] = r; }); // (학생×수업) 대체로 1건
+
+  if (!anStudents.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">데이터를 불러오는 중이거나 학생이 없습니다.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = anStudents
+    .map((s) => {
+      const a = byStu[s.id];
+      const done = a && (a.status === "graded" || a.status === "manual_review");
+      const inProgress = a && !done && a.status && a.status !== "not_started";
+      const diff = a?.difficulty;
+      const statusBadge = done ? "badge-green" : inProgress ? "badge-amber" : "badge-gray";
+      const statusText = done ? "완료" : inProgress ? "진행중" : "미시작";
+      return `
       <tr>
-        <td><strong>${r.id}</strong></td>
-        <td>${r.name}</td>
-        <td><span class="badge ${diffBadge[r.difficulty]}">${r.difficulty}</span></td>
-        <td><span class="badge ${r.done ? "badge-green" : "badge-gray"}">${r.done ? "완료" : "미완료"}</span></td>
-        <td>${r.score ?? "-"}</td>
-        <td>${r.time}</td>
-        <td class="muted">${r.submittedAt}</td>
-      </tr>`
-    )
+        <td><strong>${s.student_code}</strong></td>
+        <td>${escHtml(s.name)}</td>
+        <td>${diff ? `<span class="badge ${DIFF_BADGE[diff]}">${DIFF_KO[diff]}</span>` : "-"}</td>
+        <td><span class="badge ${statusBadge}">${statusText}</span></td>
+        <td>${done && Number.isFinite(a.total_score) ? a.total_score : "-"}</td>
+        <td>${a ? fmtMin(a.total_duration_seconds) : "-"}</td>
+        <td class="muted">${fmtDateTime(a?.submitted_at)}</td>
+      </tr>`;
+    })
     .join("");
 }
 
-// 반 선택 탭
+// 수업 선택 탭
 document.getElementById("classTabs").addEventListener("click", (e) => {
   const btn = e.target.closest(".pill-tab");
   if (!btn) return;
-  currentClass = btn.dataset.class;
+  currentClassId = btn.dataset.classId;
   document
     .querySelectorAll("#classTabs .pill-tab")
     .forEach((b) => b.classList.toggle("active", b === btn));
@@ -717,14 +814,12 @@ document.getElementById("classTabs").addEventListener("click", (e) => {
   updateCharts();
 });
 
-renderStats();
-renderStatusTable();
-
 /* ---------------- Chart.js ---------------- */
 let charts = {};
 
 function buildCharts() {
-  const st = classStats[currentClass];
+  const st = computeClassStats(currentClassId);
+  const tr = computeTrend(currentClassId);
   Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
   Chart.defaults.color = "#6b7280";
 
@@ -772,11 +867,11 @@ function buildCharts() {
   charts.trend = new Chart(document.getElementById("chartTrend"), {
     type: "line",
     data: {
-      labels: trendData.labels,
+      labels: tr.labels,
       datasets: [
         {
           label: "제출 건수",
-          data: trendData.submissions,
+          data: tr.counts,
           borderColor: "#111827",
           backgroundColor: "rgba(17,24,39,0.10)",
           fill: true,
@@ -796,85 +891,155 @@ function buildCharts() {
 
 function updateCharts() {
   if (!chartsBuilt) return;
-  const st = classStats[currentClass];
+  const st = computeClassStats(currentClassId);
+  const tr = computeTrend(currentClassId);
   charts.difficulty.data.datasets[0].data = st.difficulty;
   charts.difficulty.update();
   charts.scores.data.datasets[0].data = st.scores;
   charts.scores.update();
-  // 추이는 반별 편차를 주기 위해 completion 기반 스케일 적용
-  const factor = st.done / 18;
-  charts.trend.data.datasets[0].data = trendData.submissions.map((v) =>
-    Math.round(v * factor)
-  );
+  charts.trend.data.labels = tr.labels;
+  charts.trend.data.datasets[0].data = tr.counts;
   charts.trend.update();
 }
 
 /* =========================================================
-   (C) 성장 분석 리포트 — Markdown 생성 & 다운로드
+   (C) 성장 분석 리포트 — Markdown 생성 & 다운로드 (실데이터)
    ========================================================= */
-const reportList = document.getElementById("reportList");
-reportList.innerHTML = learning
-  .map(
-    (s, i) => `
-    <label class="select-row">
-      <input type="checkbox" class="report-cb" data-idx="${i}" />
-      <div>
-        <strong>${s.id}</strong> · ${s.name}
-      </div>
-      <span class="meta">${s.class} · ${s.done ? "점수 " + s.score : "미제출"}</span>
-    </label>`
-  )
-  .join("");
+const STATUS_KO = {
+  not_started: "미시작", in_progress: "진행중", submitted: "제출(채점중)",
+  graded: "완료", manual_review: "검토필요",
+};
+
+function renderReportList() {
+  const el = document.getElementById("reportList");
+  if (!anStudents.length) {
+    el.innerHTML = `<p class="muted" style="padding:8px">학생 데이터를 불러오는 중이거나 학생이 없습니다.</p>`;
+    return;
+  }
+  el.innerHTML = anStudents
+    .map((s) => {
+      const done = anAssignments.filter(
+        (a) => a.student_id === s.id &&
+          (a.status === "graded" || a.status === "manual_review") &&
+          Number.isFinite(a.total_score)
+      );
+      const avg = done.length ? Math.round(done.reduce((x, a) => x + a.total_score, 0) / done.length) : null;
+      return `
+      <label class="select-row">
+        <input type="checkbox" class="report-cb" data-sid="${s.id}" />
+        <div><strong>${s.student_code}</strong> · ${escHtml(s.name)}</div>
+        <span class="meta">${done.length ? `완료 ${done.length}건 · 평균 ${avg}점` : "제출 없음"}</span>
+      </label>`;
+    })
+    .join("");
+}
 
 document.getElementById("selectAll").addEventListener("change", (e) => {
-  document
-    .querySelectorAll(".report-cb")
-    .forEach((cb) => (cb.checked = e.target.checked));
+  document.querySelectorAll(".report-cb").forEach((cb) => (cb.checked = e.target.checked));
 });
 
-document.getElementById("btnGenerateMd").addEventListener("click", () => {
-  const selected = [...document.querySelectorAll(".report-cb:checked")].map(
-    (cb) => learning[+cb.dataset.idx]
-  );
-  if (selected.length === 0) {
+document.getElementById("btnGenerateMd").addEventListener("click", async (ev) => {
+  const ids = [...document.querySelectorAll(".report-cb:checked")].map((cb) => cb.dataset.sid);
+  if (ids.length === 0) {
     alert("리포트를 생성할 학생을 한 명 이상 선택하세요.");
     return;
   }
-  const md = buildMarkdown(selected);
-  document.getElementById("mdPreview").value = md;
-  const fname =
-    selected.length === 1
-      ? `growth_report_${selected[0].id}.md`
-      : `growth_report_${selected.length}_students.md`;
-  downloadFile(md, fname, "text/markdown;charset=utf-8;");
-  console.log("[성장 리포트] Markdown 생성:", selected.map((s) => s.id));
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.textContent = "생성 중…";
+  try {
+    const { md, asgIds } = await buildReportMarkdown(ids);
+    document.getElementById("mdPreview").value = md;
+    const fname = ids.length === 1
+      ? `growth_report_${anStuById[ids[0]]?.student_code || ids[0]}.md`
+      : `growth_report_${ids.length}_students.md`;
+    downloadFile(md, fname, "text/markdown;charset=utf-8;");
+
+    // report_exports 에 기록 (실패해도 다운로드는 완료됨)
+    const { data: { user } } = await window.sb.auth.getUser();
+    const { error: repErr } = await window.sb.from("report_exports").insert({
+      student_id: ids.length === 1 ? ids[0] : null,
+      selected_assignment_ids: asgIds,
+      markdown_content: md,
+      exported_by: user?.id || null,
+    });
+    if (repErr) console.warn("report_exports insert 실패:", repErr.message);
+  } catch (err) {
+    console.error(err);
+    alert("리포트 생성 중 오류: " + (err?.message || err));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
 });
 
-function buildMarkdown(list) {
-  const today = "2026-07-12";
+// 선택 학생들의 실제 제출 데이터 + AI 코드 피드백을 취합해 Markdown 생성
+async function buildReportMarkdown(studentIds) {
+  const selAsg = anAssignments.filter((a) => studentIds.includes(a.student_id));
+  const asgIds = selAsg.map((a) => a.id);
+
+  // answers → code_feedback 로 강점/보완점 취합
+  const fbByAsg = {}; // assignment_id -> { strengths:Set, issues:Set }
+  if (asgIds.length) {
+    const { data: ans } = await window.sb.from("answers").select("id, assignment_id").in("assignment_id", asgIds);
+    const ansToAsg = {};
+    (ans || []).forEach((a) => { ansToAsg[a.id] = a.assignment_id; });
+    const ansIds = (ans || []).map((a) => a.id);
+    if (ansIds.length) {
+      const { data: fbs } = await window.sb.from("code_feedback").select("answer_id, strengths, issues").in("answer_id", ansIds);
+      (fbs || []).forEach((f) => {
+        const aid = ansToAsg[f.answer_id];
+        if (!aid) return;
+        fbByAsg[aid] = fbByAsg[aid] || { strengths: new Set(), issues: new Set() };
+        (Array.isArray(f.strengths) ? f.strengths : []).forEach((x) => fbByAsg[aid].strengths.add(String(x)));
+        (Array.isArray(f.issues) ? f.issues : []).forEach((x) => fbByAsg[aid].issues.add(String(x)));
+      });
+    }
+  }
+
+  const today = new Date().toLocaleDateString("ko-KR");
   let md = `# 학생 성장 분석 리포트\n\n`;
   md += `- 생성일: ${today}\n`;
-  md += `- 대상 학생 수: ${list.length}명\n`;
-  md += `- 생성 방식: 제출 데이터 자동 수집 (AI 분석 미포함)\n\n`;
-  md += `> 본 문서는 학생 학습 데이터를 Markdown으로 정리한 것으로, AI 분석 결과가 아닙니다.\n`;
-  md += `> 필요 시 이 문서를 외부 AI 분석 도구의 입력으로 활용할 수 있습니다.\n\n`;
+  md += `- 대상 학생 수: ${studentIds.length}명\n`;
+  md += `- 생성 방식: 제출 데이터 + AI 코드 피드백 자동 취합 (추가 AI 분석은 미포함)\n\n`;
+  md += `> 본 문서는 학생 학습 데이터를 Markdown으로 정리한 것입니다. 필요 시 외부 AI 분석 도구의 입력으로 활용할 수 있습니다.\n\n`;
   md += `---\n\n`;
 
-  list.forEach((s, i) => {
-    md += `## ${i + 1}. ${s.name} (${s.id})\n\n`;
-    md += `| 항목 | 값 |\n|------|------|\n`;
-    md += `| 반 | ${s.class} |\n`;
-    md += `| 선택 난이도 | ${s.difficulty} |\n`;
-    md += `| 완료 여부 | ${s.done ? "완료" : "미완료"} |\n`;
-    md += `| 점수 | ${s.score ?? "-"} |\n`;
-    md += `| 풀이 시간 | ${s.time} |\n`;
-    md += `| 제출 시간 | ${s.submittedAt} |\n\n`;
-    md += `**주요 학습 주제:** ${s.topics.join(", ")}\n\n`;
-    md += `**강점:** ${s.strengths}\n\n`;
-    md += `**보완 필요:** ${s.weaknesses}\n\n`;
-    md += `---\n\n`;
+  studentIds.forEach((sid, i) => {
+    const s = anStuById[sid];
+    const mine = anAssignments
+      .filter((a) => a.student_id === sid)
+      .sort((a, b) => (a.class_id || "").localeCompare(b.class_id || ""));
+    md += `## ${i + 1}. ${s?.name || "?"} (${s?.student_code || sid})\n\n`;
+
+    const done = mine.filter((a) => a.status === "graded" || a.status === "manual_review");
+    const scored = done.filter((a) => Number.isFinite(a.total_score));
+    const avg = scored.length ? Math.round(scored.reduce((x, a) => x + a.total_score, 0) / scored.length) : null;
+    md += `- 총 과제: ${mine.length}건 · 완료 ${done.length}건 · 평균 점수 ${avg ?? "-"}\n\n`;
+
+    if (mine.length) {
+      md += `| 수업 | 난이도 | 상태 | 총점 | 객관식 | 코드 | 풀이시간 | 제출 |\n`;
+      md += `|---|---|---|---|---|---|---|---|\n`;
+      mine.forEach((a) => {
+        const cls = a.class_id ? classLabel(a.class_id) : a.bonus_topic_id ? "Bonus" : "-";
+        md += `| ${cls} | ${a.difficulty ? DIFF_KO[a.difficulty] : "-"} | ${STATUS_KO[a.status] || a.status || "-"} | ${Number.isFinite(a.total_score) ? a.total_score : "-"} | ${a.objective_score ?? "-"} | ${a.code_score ?? "-"} | ${fmtMin(a.total_duration_seconds)} | ${a.submitted_at ? fmtDateTime(a.submitted_at) : "-"} |\n`;
+      });
+      md += `\n`;
+    }
+
+    const strengths = new Set(), issues = new Set();
+    mine.forEach((a) => {
+      const f = fbByAsg[a.id];
+      if (f) { f.strengths.forEach((x) => strengths.add(x)); f.issues.forEach((x) => issues.add(x)); }
+    });
+    md += `**강점 (AI 코드 피드백 취합):**\n`;
+    md += strengths.size ? [...strengths].map((x) => `- ${x}`).join("\n") + "\n" : "- (데이터 없음)\n";
+    md += `\n**보완 필요 (AI 코드 피드백 취합):**\n`;
+    md += issues.size ? [...issues].map((x) => `- ${x}`).join("\n") + "\n" : "- (데이터 없음)\n";
+    md += `\n---\n\n`;
   });
 
   md += `_Python 과제 관리 시스템 · 관리자 콘솔에서 자동 생성됨_\n`;
-  return md;
+  return { md, asgIds };
 }
