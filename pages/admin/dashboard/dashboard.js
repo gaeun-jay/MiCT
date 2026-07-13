@@ -436,13 +436,15 @@ const DIFF_CAP = { easy: "Easy", medium: "Medium", hard: "Hard" };
 let dbClasses = [];          // DB classes
 let bonusTopics = [];        // DB bonus_topics
 let dbCounts = {};           // classId -> { total, diffs:Set } (DB 등록 문제수)
+let bonusCounts = {};        // bonus_topic_id -> 등록 문제수
 const parsedByKey = {};      // key -> { filename, count, difficulties, questions } (로컬 MD 미리보기)
 
 async function loadProblemGrid() {
-  const [{ data: cls, error: cErr }, { data: bts }, { data: sets }] = await Promise.all([
+  const [{ data: cls, error: cErr }, { data: bts }, { data: sets }, { data: bsets }] = await Promise.all([
     window.sb.from("classes").select("id, class_number, title, description, is_published").order("class_number"),
-    window.sb.from("bonus_topics").select("id, is_published"),
+    window.sb.from("bonus_topics").select("id, slug, title, is_published, display_order").order("display_order"),
     window.sb.from("question_sets").select("class_id, difficulty, questions(count)").eq("is_active", true),
+    window.sb.from("bonus_question_sets").select("bonus_topic_id, questions(count)").eq("is_active", true),
   ]);
   if (cErr) {
     problemGrid.innerHTML = `<p class="muted">클래스를 불러오지 못했습니다. (${cErr.message})</p>`;
@@ -459,6 +461,14 @@ async function loadProblemGrid() {
     const e = (dbCounts[s.class_id] ||= { total: 0, diffs: new Set() });
     e.total += n;
     if (n > 0) e.diffs.add(s.difficulty);
+  });
+
+  // Bonus 토픽별 등록 문제수
+  bonusCounts = {};
+  (bsets || []).forEach((s) => {
+    if (!s.bonus_topic_id) return;
+    const n = Array.isArray(s.questions) ? (s.questions[0]?.count || 0) : 0;
+    bonusCounts[s.bonus_topic_id] = (bonusCounts[s.bonus_topic_id] || 0) + n;
   });
 
   renderProblemGrid();
@@ -492,19 +502,34 @@ function renderProblemGrid() {
 
   const totalB = bonusTopics.length;
   const pubB = bonusTopics.filter((b) => b.is_published).length;
+  const withQB = bonusTopics.filter((b) => bonusCounts[b.id]).length;
   const allPub = totalB > 0 && pubB === totalB;
   const someB = pubB > 0;
   const bBadge = allPub
     ? `<span class="badge badge-green">전체 공개</span>`
     : someB ? `<span class="badge badge-amber">일부 공개</span>` : `<span class="badge badge-gray">비공개</span>`;
+
+  const topicRows = bonusTopics.map((t) => {
+    const n = bonusCounts[t.id] || 0;
+    return `
+      <div class="bt-row">
+        <span class="bt-name">${escapeHtml(t.title || t.slug)}</span>
+        <span class="badge ${n ? "badge-green" : "badge-gray"}">${n}문제</span>
+        <button class="btn btn-sm" data-bonus-topic-toggle="${t.id}" data-pub="${t.is_published}">${t.is_published ? "비공개로" : "공개"}</button>
+      </div>`;
+  }).join("");
+
   const bonusCard = `
-    <div class="card problem-item ${someB ? "" : "locked"}">
+    <div class="card problem-item bonus-card ${someB ? "" : "locked"}">
       <div class="card-body">
         <div class="pi-head"><h3>Bonus</h3>${bBadge}</div>
-        <div class="pi-meta">Python 개념 ${totalB}개<br><b>${pubB}</b>개 공개됨</div>
+        <div class="pi-meta">Python 개념 ${totalB}개 · 문제 등록 <b>${withQB}</b>개 · 공개 <b>${pubB}</b>개</div>
         <div class="pi-actions">
           <button class="btn ${allPub ? "" : "btn-primary"}" data-bonus-toggle="${allPub ? "off" : "on"}">${allPub ? "전체 비공개" : "전체 공개"}</button>
+          <label class="btn file-btn">${uploadIcon} MD 업로드<input type="file" accept=".md,.markdown,.txt" data-parse-bonus="1" /></label>
         </div>
+        <div class="bt-list">${topicRows}</div>
+        <p class="bt-hint muted">업로드하는 MD의 <code>topic_id</code>로 개념이 자동 매칭됩니다.</p>
       </div>
     </div>`;
 
@@ -651,8 +676,90 @@ function showPreview(key) {
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+// ---- Bonus MD → DB (관리자 RLS 로 클라이언트에서 직접 저장, 서버리스 불필요) ----
+function parseBonusMeta(text) {
+  const idM = text.match(/^\s*topic_id:\s*(.+)$/m);
+  const titleM = text.match(/^\s*topic_title:\s*(.+)$/m);
+  return { slug: idM ? stripQuotes(idM[1]) : null, title: titleM ? stripQuotes(titleM[1]) : null };
+}
+function bonusCorrect(q) {
+  if (q.type === "ox") return q.answer ?? null;
+  if (q.type === "blank") return Array.isArray(q.answers) ? q.answers : (q.answers ? [q.answers] : null);
+  if (q.type === "matching") return Array.isArray(q.answer_pairs) ? q.answer_pairs : null;
+  return null;
+}
+function bonusChoices(q) {
+  if (q.type === "matching") return { left: q.left_items || [], right: q.right_items || [] };
+  return q.choices ?? null;
+}
+
+async function uploadBonusMd(file) {
+  const text = await file.text();
+  const meta = parseBonusMeta(text);
+  if (!meta.slug) { alert("MD에서 topic_id를 찾지 못했습니다. (frontmatter의 topic_id 확인)"); return; }
+
+  const parsed = parseQuestionsMd(text);
+  const qs = (parsed.questions || []).filter((q) => ["ox", "blank", "matching"].includes(q.type));
+  if (!qs.length) { alert("보너스 문제를 찾지 못했습니다. (### Question, type: ox|blank|matching)"); return; }
+
+  // 1) bonus_topic 확보 (slug 기준, seed 에 이미 있으면 재사용)
+  let { data: topic } = await window.sb.from("bonus_topics").select("id, title").eq("slug", meta.slug).maybeSingle();
+  if (!topic) {
+    const { data: nt, error } = await window.sb.from("bonus_topics")
+      .insert({ slug: meta.slug, title: meta.title || meta.slug, is_published: false })
+      .select("id, title").single();
+    if (error) { alert("토픽 생성 실패: " + error.message); return; }
+    topic = nt;
+  } else if (meta.title && meta.title !== topic.title) {
+    await window.sb.from("bonus_topics").update({ title: meta.title }).eq("id", topic.id);
+  }
+
+  // 2) active bonus_question_set 확보 (있으면 문제 교체 = 재업로드)
+  const { data: sets } = await window.sb.from("bonus_question_sets")
+    .select("id").eq("bonus_topic_id", topic.id).eq("is_active", true).limit(1);
+  let setId;
+  if (sets && sets.length) {
+    setId = sets[0].id;
+    await window.sb.from("questions").delete().eq("bonus_question_set_id", setId);
+    await window.sb.from("bonus_question_sets")
+      .update({ source_filename: file.name, updated_at: new Date().toISOString() }).eq("id", setId);
+  } else {
+    const { data: ns, error } = await window.sb.from("bonus_question_sets")
+      .insert({ bonus_topic_id: topic.id, source_filename: file.name, version: 1, is_active: true })
+      .select("id").single();
+    if (error) { alert("세트 생성 실패: " + error.message); return; }
+    setId = ns.id;
+  }
+
+  // 3) questions insert (문제당 1점)
+  const rows = qs.map((q, i) => ({
+    bonus_question_set_id: setId,
+    question_number: parseInt(q.num, 10) || i + 1,
+    question_type: q.type,
+    question_text: String(q.question || ""),
+    choices: bonusChoices(q),
+    correct_answers: bonusCorrect(q),
+    wrong_comment: q.wrong_comment ?? null,
+    concept: q.concept ?? meta.slug,
+    max_score: 1,
+  }));
+  const { error: qErr } = await window.sb.from("questions").insert(rows);
+  if (qErr) { alert("문제 저장 실패: " + qErr.message); return; }
+
+  alert(`"${file.name}" 업로드 완료\n${meta.title || meta.slug} · ${rows.length}개 문제 등록`);
+  await loadProblemGrid();
+}
+
 // MD 업로드 — 파싱 후 서버리스로 DB(questions) 저장
 problemGrid.addEventListener("change", async (e) => {
+  const bonusInput = e.target.closest("input[data-parse-bonus]");
+  if (bonusInput && bonusInput.files[0]) {
+    const f = bonusInput.files[0];
+    try { await uploadBonusMd(f); }
+    catch (err) { console.error(err); alert("보너스 업로드 오류: " + err.message); }
+    finally { bonusInput.value = ""; }
+    return;
+  }
   const input = e.target.closest("input[data-parse]");
   if (!input || !input.files[0]) return;
   const key = input.dataset.parse;
@@ -728,6 +835,18 @@ problemGrid.addEventListener("click", async (e) => {
     if (!ids.length) { bt.disabled = false; return; }
     const { error } = await window.sb.from("bonus_topics").update({ is_published: on }).in("id", ids);
     if (error) { alert("변경 실패: " + error.message); bt.disabled = false; return; }
+    await loadProblemGrid();
+    return;
+  }
+
+  // 개념별 공개/비공개 토글
+  const btt = e.target.closest("button[data-bonus-topic-toggle]");
+  if (btt) {
+    const id = btt.dataset.bonusTopicToggle;
+    const cur = btt.dataset.pub === "true";
+    btt.disabled = true;
+    const { error } = await window.sb.from("bonus_topics").update({ is_published: !cur }).eq("id", id);
+    if (error) { alert("변경 실패: " + error.message); btt.disabled = false; return; }
     await loadProblemGrid();
     return;
   }

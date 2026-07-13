@@ -389,7 +389,7 @@ returns table (
 $$;
 grant execute on function public.get_student_questions(uuid) to authenticated;
 
--- (Bonus 개념 문제용도 동일 패턴으로 별도 함수 추가 예정)
+-- (Bonus 개념 문제용 함수 get_bonus_questions / start_bonus_assignment / grade_bonus 는 07_bonus.sql 참고)
 
 -- ============================================================
 -- 끝. 다음 단계:
