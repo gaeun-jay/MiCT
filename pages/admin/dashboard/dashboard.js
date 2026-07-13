@@ -693,6 +693,55 @@ function bonusChoices(q) {
   return q.choices ?? null;
 }
 
+// 문제 텍스트를 우크라이나어로 번역해 각 문제에 *_uk 필드를 붙임 (코드/백틱 보존)
+// 실패해도 업로드는 진행됨 (uk 없이 = 영어 폴백)
+async function translateQuestions(questions) {
+  const items = [];
+  questions.forEach((q, i) => {
+    if (q.question) items.push({ key: `q${i}.t`, text: String(q.question) });
+    if (q.wrong_comment) items.push({ key: `q${i}.w`, text: String(q.wrong_comment) });
+    if (q.type === "multiple_choice" && Array.isArray(q.choices)) {
+      q.choices.forEach((c, ci) => items.push({ key: `q${i}.c${ci}`, text: String(c) }));
+    }
+    if (q.type === "matching") {
+      (q.left_items || []).forEach((it, li) => items.push({ key: `q${i}.l${li}`, text: String(it.text) }));
+      (q.right_items || []).forEach((it, ri) => items.push({ key: `q${i}.r${ri}`, text: String(it.text) }));
+    }
+  });
+  if (!items.length) return;
+
+  const token = await getToken();
+  if (!token) return;
+  let map = {};
+  try {
+    const resp = await fetch(`${API_BASE}/api/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ items, target: "uk" }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) { console.warn("[translate] 실패:", data.error || resp.status); return; }
+    (data.translations || []).forEach((t) => { map[t.key] = t.text; });
+  } catch (e) {
+    console.warn("[translate] 오류:", e);
+    return;
+  }
+
+  questions.forEach((q, i) => {
+    if (map[`q${i}.t`]) q.question_text_uk = map[`q${i}.t`];
+    if (map[`q${i}.w`]) q.wrong_comment_uk = map[`q${i}.w`];
+    if (q.type === "multiple_choice" && Array.isArray(q.choices)) {
+      q.choices_uk = q.choices.map((c, ci) => map[`q${i}.c${ci}`] ?? String(c));
+    }
+    if (q.type === "matching") {
+      q.choices_uk = {
+        left: (q.left_items || []).map((it, li) => ({ id: it.id, text: map[`q${i}.l${li}`] ?? it.text })),
+        right: (q.right_items || []).map((it, ri) => ({ id: it.id, text: map[`q${i}.r${ri}`] ?? it.text })),
+      };
+    }
+  });
+}
+
 async function uploadBonusMd(file) {
   const text = await file.text();
   const meta = parseBonusMeta(text);
@@ -701,6 +750,9 @@ async function uploadBonusMd(file) {
   const parsed = parseQuestionsMd(text);
   const qs = (parsed.questions || []).filter((q) => ["ox", "blank", "matching"].includes(q.type));
   if (!qs.length) { alert("보너스 문제를 찾지 못했습니다. (### Question, type: ox|blank|matching)"); return; }
+
+  // 우크라이나어 번역 (코드 보존) — 실패해도 진행
+  await translateQuestions(qs);
 
   // 1) bonus_topic 확보 (slug 기준, seed 에 이미 있으면 재사용)
   let { data: topic } = await window.sb.from("bonus_topics").select("id, title").eq("slug", meta.slug).maybeSingle();
@@ -737,9 +789,12 @@ async function uploadBonusMd(file) {
     question_number: parseInt(q.num, 10) || i + 1,
     question_type: q.type,
     question_text: String(q.question || ""),
+    question_text_uk: q.question_text_uk ?? null,
     choices: bonusChoices(q),
+    choices_uk: q.choices_uk ?? null,
     correct_answers: bonusCorrect(q),
     wrong_comment: q.wrong_comment ?? null,
+    wrong_comment_uk: q.wrong_comment_uk ?? null,
     concept: q.concept ?? meta.slug,
     max_score: 1,
   }));
@@ -787,6 +842,9 @@ problemGrid.addEventListener("change", async (e) => {
   // DB 업로드 (관리자 토큰)
   const token = await getToken();
   if (!token) { alert("로그인이 만료되었습니다. 다시 로그인해 주세요."); return; }
+
+  // 우크라이나어 번역 (코드 보존) — 실패해도 진행
+  await translateQuestions(parsed.questions);
 
   try {
     const resp = await fetch(`${API_BASE}/api/upload-questions`, {

@@ -22,6 +22,12 @@ const TYPE_KEY = { ox: "type_ox", multiple_choice: "type_mc", blank: "type_blank
 const DIFF_KEY = { Easy: "diff_easy", Medium: "diff_medium", Hard: "diff_hard" };
 const diffLabelOf = (v) => t(DIFF_KEY[v] || "diff_easy");
 
+// 콘텐츠 다국어: uk 선택 시 번역본, 없으면 영어 폴백 (코드는 항상 원문)
+const isUk = () => window.I18N && window.I18N.getLang() === "uk";
+const qText = (q) => (isUk() && q.question_text_uk) ? q.question_text_uk : (q.question_text || "");
+const qChoices = (q) => (isUk() && Array.isArray(q.choices_uk)) ? q.choices_uk : (Array.isArray(q.choices) ? q.choices : []);
+const wcText = (r) => (isUk() && r.wrong_comment_uk) ? r.wrong_comment_uk : (r.wrong_comment || "");
+
 // ---- 상태 ----
 let started = false, submitted = false, difficulty = preDiff || "Easy";
 let seconds = 0, timerId = null;
@@ -58,6 +64,24 @@ function refreshChrome() {
   submitBtn.textContent = submitted ? t("submitted") : t("submit");
 }
 window.addEventListener("i18n:change", refreshChrome);
+
+// 언어 전환 시 이미 렌더된 문제의 텍스트/보기를 스왑 (답안 선택은 유지)
+function applyQuestionLang() {
+  document.querySelectorAll("#questions .q").forEach((qEl) => {
+    const q = questionsById[qEl.dataset.qid];
+    if (!q) return;
+    const tEl = qEl.querySelector(".q-text");
+    if (tEl) tEl.textContent = qText(q);
+    if (q.question_type === "multiple_choice") {
+      const chs = qChoices(q);
+      qEl.querySelectorAll(".mc-opt").forEach((btn, ci) => {
+        const span = btn.querySelector("span:last-child");
+        if (span && chs[ci] != null) span.textContent = chs[ci];
+      });
+    }
+  });
+}
+window.addEventListener("i18n:change", applyQuestionLang);
 
 // ---- 인증 가드 ----
 (async () => {
@@ -100,7 +124,7 @@ function renderQuestion(q, i) {
       <button type="button" class="ox-btn" data-v="O">O</button>
       <button type="button" class="ox-btn" data-v="X">X</button></div>`;
   } else if (q.question_type === "multiple_choice") {
-    const choices = Array.isArray(q.choices) ? q.choices : [];
+    const choices = qChoices(q);
     body = `<div class="mc-opts">${choices.map((c, ci) =>
       `<button type="button" class="mc-opt" data-v="${ci + 1}">
          <span class="mc-num">${ci + 1}</span><span>${escapeHtml(c)}</span></button>`).join("")}</div>`;
@@ -111,7 +135,7 @@ function renderQuestion(q, i) {
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
     <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
-    <p class="q-text">${escapeHtml(q.question_text || "")}</p>
+    <p class="q-text">${escapeHtml(qText(q))}</p>
     <div class="q-body">${body}</div>
     <div class="q-result" id="result-${q.id}"></div>
   </article>`;
@@ -276,7 +300,7 @@ function correctText(r) {
   const c = r.correct;
   if (r.type === "ox") return `<b>${c}</b>`;
   if (r.type === "multiple_choice") {
-    const choices = Array.isArray(q.choices) ? q.choices : [];
+    const choices = qChoices(q);
     const n = Number(c);
     return `<b>#${n}</b>${choices[n - 1] ? ` (${escapeHtml(choices[n - 1])})` : ""}`;
   }
@@ -295,7 +319,7 @@ function renderObjectiveResults(obj) {
     } else {
       el.className = "q-result show q-result--wrong";
       qEl?.classList.add("graded-wrong");
-      el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><p class="r-comment">${t("res_answer")}: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
+      el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><p class="r-comment">${t("res_answer")}: ${correctText(r)}. ${escapeHtml(wcText(r))}</p>`;
     }
   });
 }

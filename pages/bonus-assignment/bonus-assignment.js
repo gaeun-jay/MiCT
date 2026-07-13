@@ -42,6 +42,12 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
+// 콘텐츠 다국어: uk 선택 시 번역본, 없으면 영어 폴백 (코드는 항상 원문)
+const isUk = () => window.I18N && window.I18N.getLang() === "uk";
+const qText = (q) => (isUk() && q.question_text_uk) ? q.question_text_uk : (q.question_text || "");
+const qCh = (q) => (isUk() && q.choices_uk) ? q.choices_uk : (q.choices || {});
+const wcText = (r) => (isUk() && r.wrong_comment_uk) ? r.wrong_comment_uk : (r.wrong_comment || "");
+
 let qCount = 0;
 function updateTimer() { timerEl.textContent = `${t("time_prefix")} ${fmt(seconds)}`; }
 function refreshChrome() {
@@ -57,6 +63,32 @@ function refreshChrome() {
 window.addEventListener("i18n:change", refreshChrome);
 refreshChrome();
 
+// 언어 전환 시 렌더된 문제 텍스트/선긋기 항목 스왑 (선택은 유지)
+function applyQuestionLang() {
+  document.querySelectorAll("#questions .q").forEach((qEl) => {
+    const q = questionsById[qEl.dataset.qid];
+    if (!q) return;
+    const tEl = qEl.querySelector(".q-text");
+    if (tEl) tEl.textContent = qText(q);
+    if (q.question_type === "matching") {
+      const ch = qCh(q);
+      const left = Array.isArray(ch.left) ? ch.left : [];
+      const right = Array.isArray(ch.right) ? ch.right : [];
+      qEl.querySelectorAll(".match-row").forEach((row) => {
+        const lItem = left.find((x) => x.id === row.dataset.left);
+        const term = row.querySelector(".match-term");
+        if (term && lItem) term.textContent = lItem.text;
+        row.querySelectorAll(".match-select option").forEach((opt) => {
+          if (!opt.value) { opt.textContent = t("select_a_match"); return; }
+          const rItem = right.find((x) => x.id === opt.value);
+          if (rItem) opt.textContent = rItem.text;
+        });
+      });
+    }
+  });
+}
+window.addEventListener("i18n:change", applyQuestionLang);
+
 // ---- 문제 렌더 ----
 function renderQuestion(q, i) {
   const n = q.question_number ?? i + 1;
@@ -68,7 +100,7 @@ function renderQuestion(q, i) {
   } else if (q.question_type === "blank") {
     body = `<input type="text" class="blank-input" placeholder="${t("answer_placeholder")}" autocomplete="off" spellcheck="false">`;
   } else if (q.question_type === "matching") {
-    const ch = q.choices || {};
+    const ch = qCh(q);
     const left = Array.isArray(ch.left) ? ch.left : [];
     const right = Array.isArray(ch.right) ? ch.right : [];
     const opts = right.map((r) => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.text)}</option>`).join("");
@@ -81,7 +113,7 @@ function renderQuestion(q, i) {
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
     <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
-    <p class="q-text">${escapeHtml(q.question_text || "")}</p>
+    <p class="q-text">${escapeHtml(qText(q))}</p>
     <div class="q-body">${body}</div>
     <div class="q-result" id="result-${q.id}"></div>
   </article>`;
@@ -201,7 +233,7 @@ submitBtn.addEventListener("click", async () => {
 
 // ---- 결과 렌더 ----
 function pairText(q, leftId, rightId) {
-  const ch = q.choices || {};
+  const ch = qCh(q);
   const l = (ch.left || []).find((x) => x.id === leftId);
   const r = (ch.right || []).find((x) => x.id === rightId);
   return `${escapeHtml(l?.text ?? leftId)} → ${escapeHtml(r?.text ?? rightId)}`;
@@ -226,10 +258,10 @@ function renderResults(res) {
 
     let detail = "";
     if (r.type === "ox") {
-      detail = `${t("res_answer")}: <b>${escapeHtml(String(r.correct ?? ""))}</b>. ${escapeHtml(r.wrong_comment || "")}`;
+      detail = `${t("res_answer")}: <b>${escapeHtml(String(r.correct ?? ""))}</b>. ${escapeHtml(wcText(r))}`;
     } else if (r.type === "blank") {
       const acc = Array.isArray(r.correct) ? r.correct[0] : r.correct;
-      detail = `${t("res_accepted")}: <b>${escapeHtml(String(acc ?? ""))}</b>. ${escapeHtml(r.wrong_comment || "")}`;
+      detail = `${t("res_accepted")}: <b>${escapeHtml(String(acc ?? ""))}</b>. ${escapeHtml(wcText(r))}`;
     } else if (r.type === "matching") {
       // 학생 선택과 정답 비교로 각 줄 표시
       const pairs = Array.isArray(r.correct) ? r.correct : [];
@@ -243,7 +275,7 @@ function renderResults(res) {
         });
       }
       const list = pairs.map((p) => `<li>${pairText(q, p.left, p.right)}</li>`).join("");
-      detail = `${escapeHtml(r.wrong_comment || "")}` +
+      detail = `${escapeHtml(wcText(r))}` +
         (list ? `<br><b>${t("res_correct_matches")}</b><ul>${list}</ul>` : "");
     }
     el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><p class="r-comment">${detail}</p>`;
