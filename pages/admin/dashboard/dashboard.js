@@ -21,19 +21,10 @@ document.getElementById("logoutBtn")?.addEventListener("click", () =>
 );
 
 
-/* ---------------- Mock 데이터 ---------------- */
-const students = [
-  { id: "Student001", name: "Іванців Єва", age: 14, mustChange: true,  lastLogin: "2026-07-11 14:20" },
-  { id: "Student002", name: "Альошина Оксана Анатоліївна", age: 47, mustChange: false, lastLogin: "2026-07-10 09:12" },
-  { id: "Student003", name: "Karpenko Maksym", age: 12, mustChange: false, lastLogin: "-" },
-  { id: "Student004", name: "Василевський Ярослав", age: 13, mustChange: true,  lastLogin: "2026-07-11 16:40" },
-  { id: "Student005", name: "Гаврилова Камілла", age: 15, mustChange: false, lastLogin: "2026-07-09 21:05" },
-  { id: "Student006", name: "Бубельник Нестор", age: 13, mustChange: false, lastLogin: "2026-07-11 11:33" },
-  { id: "Student007", name: "Адамішен Данило", age: 15, mustChange: true,  lastLogin: "-" },
-  { id: "Student008", name: "Гуржин Ілля", age: 12, mustChange: false, lastLogin: "2026-07-08 13:50" },
-];
+/* ---------------- 학생 목록 (DB에서 로드) ---------------- */
+let students = [];   // students 테이블 rows
 
-// 학습 현황 (학생별 제출 데이터) — 성장 리포트에도 재사용
+// 학습 현황 (학생별 제출 데이터) — 성장 리포트에도 재사용 (아직 mock)
 const learning = [
   {
     id: "Student001", name: "김민준", difficulty: "중", done: true,
@@ -144,52 +135,102 @@ backdrop.addEventListener("click", closeSidebar);
    ========================================================= */
 const studentTbody = document.getElementById("studentTbody");
 
+function escAttr(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+
 function renderStudents() {
   studentTbody.innerHTML = "";
-  students.forEach((s, idx) => {
+  if (!students.length) {
+    studentTbody.innerHTML = `<tr><td colspan="5" class="muted">등록된 학생이 없습니다. CSV 업로드 또는 단일 생성으로 계정을 만드세요.</td></tr>`;
+    return;
+  }
+  students.forEach((s) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><strong>${s.id}</strong></td>
+      <td><strong>${s.student_code}</strong></td>
       <td>
-        <input class="name-input" value="${s.name}" data-idx="${idx}" />
+        <input class="name-input" value="${escAttr(s.name)}" data-id="${s.id}" />
       </td>
       <td>${s.age ?? "-"}</td>
       <td>
-        <span class="badge ${s.mustChange ? "badge-amber" : "badge-gray"}">
-          ${s.mustChange ? "필요" : "완료"}
+        <span class="badge ${s.must_change_password ? "badge-amber" : "badge-gray"}">
+          ${s.must_change_password ? "필요" : "완료"}
         </span>
       </td>
-      <td class="muted">${s.lastLogin}</td>`;
+      <td class="muted">${s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-"}</td>`;
     studentTbody.appendChild(tr);
   });
 }
-renderStudents();
 
-// 이름 인라인 수정
-studentTbody.addEventListener("change", (e) => {
-  if (e.target.classList.contains("name-input")) {
-    const idx = +e.target.dataset.idx;
-    students[idx].name = e.target.value.trim();
-    console.log("[학생 관리] 이름 수정:", students[idx].id, "→", students[idx].name);
+// DB에서 학생 목록 로드
+async function loadStudents() {
+  studentTbody.innerHTML = `<tr><td colspan="5" class="muted">불러오는 중…</td></tr>`;
+  const { data, error } = await window.sb
+    .from("students")
+    .select("id, student_code, name, age, must_change_password, last_login_at")
+    .order("student_code");
+  if (error) {
+    studentTbody.innerHTML = `<tr><td colspan="5" class="muted">불러오기 실패: ${error.message}</td></tr>`;
+    return;
   }
+  students = data || [];
+  renderStudents();
+}
+loadStudents();
+
+// 이름 인라인 수정 → DB 반영
+studentTbody.addEventListener("change", async (e) => {
+  if (!e.target.classList.contains("name-input")) return;
+  const id = e.target.dataset.id;
+  const name = e.target.value.trim();
+  const { error } = await window.sb.from("students").update({ name }).eq("id", id);
+  if (error) { alert("이름 수정 실패: " + error.message); return; }
+  const row = students.find((s) => s.id === id);
+  if (row) row.name = name;
 });
 
-// 단일 계정 생성 (스텁)
-document.getElementById("btnCreateSingle").addEventListener("click", () => {
-  const nextNum = String(students.length + 1).padStart(3, "0");
-  const newId = "Student" + nextNum;
+// service_role 서버리스로 계정 생성 (공통)
+async function createAccounts(payload) {
+  const token = await getToken();
+  if (!token) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); return null; }
+  const resp = await fetch(`${API_BASE}/api/create-students`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ students: payload }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) { alert("생성 실패: " + (data.error || resp.status)); return null; }
+  return data;
+}
+
+// 다음 학생 번호 계산 (StudentNNN)
+function nextStudentCode() {
+  const nums = students
+    .map((s) => parseInt(String(s.student_code || "").replace(/\D/g, ""), 10))
+    .filter(Number.isFinite);
+  const n = (nums.length ? Math.max(...nums) : 0) + 1;
+  return "Student" + String(n).padStart(3, "0");
+}
+
+// 단일 계정 생성
+document.getElementById("btnCreateSingle").addEventListener("click", async () => {
+  const newId = nextStudentCode();
   const name = prompt(`새 학생 이름을 입력하세요.\n아이디: ${newId}`, "");
   if (name === null) return;
   const ageStr = prompt("나이 (선택, 숫자):", "");
   const ageNum = parseInt(ageStr, 10);
-  students.push({
-    id: newId, name: name.trim() || "이름미정",
-    age: Number.isFinite(ageNum) ? ageNum : null,
-    mustChange: true, lastLogin: "-",
-  });
-  console.log("[학생 관리] 단일 계정 생성:", newId);
-  renderStudents();
-  alert(`계정이 생성되었습니다.\n아이디: ${newId}`);
+  const data = await createAccounts([
+    { student_code: newId, name: name.trim(), age: Number.isFinite(ageNum) ? ageNum : null },
+  ]);
+  if (!data) return;
+  const r = data.results[0];
+  if (r.status === "created") {
+    alert(`계정이 생성되었습니다.\n아이디: ${newId}\n임시 비밀번호: ${r.password}\n\n이 비밀번호를 학생에게 전달하세요. (첫 로그인 시 변경됩니다.)`);
+  } else if (r.status === "exists") {
+    alert(`이미 존재하는 계정입니다: ${newId}\n(이름/나이만 갱신했습니다.)`);
+  } else {
+    alert(`생성 실패: ${r.error || "알 수 없는 오류"}`);
+  }
+  await loadStudents();
 });
 
 // 다중 계정 생성 — 학생 CSV 업로드 → 파싱 (Student_Number, Name, Age)
@@ -214,51 +255,58 @@ function parseStudentCsv(text) {
   return out;
 }
 
-document.getElementById("csvUpload").addEventListener("change", (e) => {
+document.getElementById("csvUpload").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const parsed = parseStudentCsv(String(reader.result));
-    if (!parsed.length) {
-      alert("학생 데이터를 찾지 못했습니다. CSV 형식을 확인하세요.\n(열: Student_Number, Name, Age)");
-      e.target.value = "";
-      return;
-    }
-    let added = 0, updated = 0;
-    parsed.forEach((p) => {
-      const ex = students.find((s) => s.id.toLowerCase() === p.code.toLowerCase());
-      if (ex) { ex.name = p.name; ex.age = p.age; updated++; }
-      else { students.push({ id: p.code, name: p.name, age: p.age, mustChange: true, lastLogin: "-" }); added++; }
-    });
-    renderStudents();
-    console.log("[학생 관리] 다중 계정 생성 파싱:", file.name, parsed.length + "명");
-    alert(
-      `"${file.name}" 파싱 완료 · 총 ${parsed.length}명\n` +
-      `신규 ${added}명 / 갱신 ${updated}명\n\n` +
-      `(로컬 미리보기입니다. 실제 계정 생성과 임시 비밀번호 발급은 배포 후 서버리스(service_role)에서 처리됩니다.)`
-    );
-    e.target.value = "";
-  };
-  reader.readAsText(file, "utf-8");
+  const text = await file.text();
+  const parsed = parseStudentCsv(text);
+  e.target.value = "";
+  if (!parsed.length) {
+    alert("학생 데이터를 찾지 못했습니다. CSV 형식을 확인하세요.\n(열: Student_Number, Name, Age)");
+    return;
+  }
+  if (!confirm(
+    `"${file.name}" · 총 ${parsed.length}명의 계정을 생성합니다.\n` +
+    `임시 비밀번호가 발급되며, 완료 후 비밀번호 CSV가 자동 다운로드됩니다.\n\n계속할까요?`
+  )) return;
+
+  const data = await createAccounts(
+    parsed.map((p) => ({ student_code: p.code, name: p.name, age: p.age }))
+  );
+  if (!data) return;
+
+  // 신규 생성된 계정의 임시 비밀번호를 CSV로 다운로드
+  const createdRows = (data.results || []).filter((r) => r.status === "created");
+  if (createdRows.length) {
+    const header = ["학생아이디", "이름", "임시비밀번호"];
+    const rows = createdRows.map((r) => [r.student_code, r.name, r.password]);
+    const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+    downloadFile("﻿" + csv, "student_passwords.csv", "text/csv;charset=utf-8;");
+  }
+  alert(
+    `완료 · 신규 ${data.created}명 / 기존 ${data.existed}명 / 오류 ${data.errored}명\n\n` +
+    (createdRows.length
+      ? "신규 계정의 임시 비밀번호가 CSV로 다운로드되었습니다.\n학생들에게 전달하세요. (첫 로그인 시 변경됩니다.)"
+      : "신규 생성된 계정이 없습니다.")
+  );
+  await loadStudents();
 });
 
-// 학생 목록 CSV 다운로드 (실제 구현)
+// 학생 목록 CSV 다운로드 (임시 비밀번호 제외 — DB에 평문 비번 없음)
 document.getElementById("btnDownloadCsv").addEventListener("click", () => {
   const header = ["학생아이디", "이름", "나이", "비밀번호변경필요", "마지막로그인일시"];
   const rows = students.map((s) => [
-    s.id,
+    s.student_code,
     s.name,
     s.age ?? "",
-    s.mustChange ? "필요" : "완료",
-    s.lastLogin,
+    s.must_change_password ? "필요" : "완료",
+    s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-",
   ]);
   const csv = [header, ...rows]
     .map((r) => r.map(csvCell).join(","))
     .join("\r\n");
   // BOM 추가 → Excel 한글 깨짐 방지
   downloadFile("﻿" + csv, "students.csv", "text/csv;charset=utf-8;");
-  console.log("[학생 관리] 학생 목록 CSV 다운로드 완료");
 });
 
 function csvCell(val) {

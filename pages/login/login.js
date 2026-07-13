@@ -83,6 +83,11 @@ form.addEventListener("submit", async (e) => {
       return;
     }
 
+    // 마지막 로그인 일시 기록 (관리자 대시보드 표시용) — 실패해도 로그인은 진행
+    window.sb.rpc("record_login").then(({ error }) => {
+      if (error) console.warn("record_login failed:", error.message);
+    });
+
     // 표시용 정보 저장
     localStorage.setItem("studentId", student?.student_code || studentId);
     if (student?.name) localStorage.setItem("studentName", student.name);

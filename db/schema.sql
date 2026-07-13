@@ -61,6 +61,7 @@ create table if not exists public.students (
 );
 -- 이미 students 테이블이 있던 경우를 위한 마이그레이션
 alter table public.students add column if not exists age int;
+alter table public.students add column if not exists last_login_at timestamptz;  -- 06_last_login.sql 참고
 
 -- 17.3 classes
 create table if not exists public.classes (
