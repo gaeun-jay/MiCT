@@ -24,11 +24,11 @@ async function loadBonus() {
   ]);
 
   if (tErr) {
-    grid.innerHTML = `<p class="bonus-empty">Could not load topics. (${tErr.message})</p>`;
+    grid.innerHTML = `<p class="bonus-empty">${t("bonus_load_error")} (${tErr.message})</p>`;
     return;
   }
   if (!topics || !topics.length) {
-    grid.innerHTML = `<p class="bonus-empty">No bonus concepts are available yet. Please check back later.</p>`;
+    grid.innerHTML = `<p class="bonus-empty">${t("bonus_empty")}</p>`;
     return;
   }
 

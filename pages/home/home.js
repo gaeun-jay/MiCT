@@ -13,13 +13,17 @@ document.getElementById("logoutLink")?.addEventListener("click", (e) => {
 const grid = document.getElementById("asnGrid");
 const chip = document.getElementById("studentChip");
 
-const STATUS_LABEL = {
-  completed:   { text: "Done",        cls: "asn-badge--done" },
-  in_progress: { text: "In progress", cls: "asn-badge--progress" },
-  not_started: { text: "Not started", cls: "asn-badge--todo" },
-  locked:      { text: "Locked",      cls: "asn-badge--locked" },
+const STATUS_CLS = {
+  completed:   "asn-badge--done",
+  in_progress: "asn-badge--progress",
+  not_started: "asn-badge--todo",
+  locked:      "asn-badge--locked",
 };
-const DIFF_LABEL = { easy: "Easy", medium: "Medium", hard: "Hard" };
+const STATUS_KEY = {
+  completed: "badge_done", in_progress: "badge_progress",
+  not_started: "badge_todo", locked: "badge_locked",
+};
+const diffLabel = (d) => (d ? t("diff_" + d) : "-");
 
 function fmtTime(sec) {
   if (sec == null) return "";
@@ -33,13 +37,13 @@ function conceptList(concepts) {
 function metaRow(a) {
   if (a.status === "completed") {
     return `<div class="asn-meta">
-      <span><b>${a.difficulty ?? "-"}</b></span>
-      <span><b>${a.score ?? "-"}</b> pts</span>
+      <span><b>${diffLabel(a.difficulty)}</b></span>
+      <span><b>${a.score ?? "-"}</b> ${t("pts")}</span>
       <span>${a.time ?? ""}</span>
     </div>`;
   }
   if (a.status === "in_progress") {
-    return `<div class="asn-meta"><span><b>${a.difficulty ?? "-"}</b></span><span>Continue</span></div>`;
+    return `<div class="asn-meta"><span><b>${diffLabel(a.difficulty)}</b></span><span>${t("continue")}</span></div>`;
   }
   return "";
 }
@@ -48,18 +52,17 @@ function hrefFor(a) {
   return `../assignment/assignment.html?class=${a.classNo}`;
 }
 function cardHTML(a) {
-  const badge = STATUS_LABEL[a.status];
   const classes = [
     "asn-card", "glass-card",
     a.bonus ? "asn-card--bonus" : "",
     a.status === "completed" ? "asn-card--done" : "",
     a.status === "locked" ? "asn-card--locked" : "",
   ].filter(Boolean).join(" ");
-  const titleHTML = a.title.replace(/\n/g, "<br>");
+  const titleHTML = a.bonus ? t("bonus_challenge_html") : `${t("assignment")} ${a.classNo}`;
   const tag = a.status === "locked" ? "div" : "a";
   const hrefAttr = a.status === "locked" ? "" : ` href="${hrefFor(a)}"`;
   return `<${tag} class="${classes}"${hrefAttr} data-key="${a.key}">
-    <span class="asn-badge ${badge.cls}">${badge.text}</span>
+    <span class="asn-badge ${STATUS_CLS[a.status]}">${t(STATUS_KEY[a.status])}</span>
     <h2 class="asn-title">${titleHTML}</h2>
     ${conceptList(a.concepts)}
     ${metaRow(a)}
@@ -87,7 +90,7 @@ async function loadHome() {
     .order("class_number");
   if (error) {
     console.error(error);
-    grid.innerHTML = `<p style="color:#fff;grid-column:1/-1">과제를 불러오지 못했습니다. (${error.message})</p>`;
+    grid.innerHTML = `<p style="color:#fff;grid-column:1/-1">${t("home_load_error")} (${error.message})</p>`;
     return;
   }
 
@@ -108,26 +111,34 @@ async function loadHome() {
     if (c.is_published) {
       if (asg && asg.status === "graded") {
         status = "completed";
-        difficulty = DIFF_LABEL[asg.difficulty] || asg.difficulty;
+        difficulty = asg.difficulty;               // raw (렌더 시 다국어)
         score = asg.total_score;
         time = fmtTime(asg.total_duration_seconds);
       } else if (asg && (asg.status === "in_progress" || asg.status === "submitted")) {
         status = "in_progress";
-        difficulty = DIFF_LABEL[asg.difficulty] || asg.difficulty;
+        difficulty = asg.difficulty;
       } else {
         status = "not_started";
       }
     }
     return {
       key: `class${c.class_number}`, classNo: c.class_number,
-      title: `Assignment ${c.class_number}`, concepts, status, difficulty, score, time,
+      concepts, status, difficulty, score, time,
     };
   });
 
   // Bonus 카드 (항상 진입 가능)
-  cards.push({ key: "bonus", bonus: true, title: "Bonus\nChallenge", concepts: [], status: "not_started" });
+  cards.push({ key: "bonus", bonus: true, concepts: [], status: "not_started" });
 
-  grid.innerHTML = cards.map(cardHTML).join("");
+  lastCards = cards;
+  renderCards();
 }
+
+let lastCards = [];
+function renderCards() {
+  grid.innerHTML = lastCards.map(cardHTML).join("");
+}
+// 언어 전환 시 카드 다시 렌더 (라벨/난이도/제목 갱신)
+window.addEventListener("i18n:change", renderCards);
 
 loadHome();

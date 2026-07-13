@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../design-system.css">
 <link rel="stylesheet" href="../assignment/assignment.css?v=2">
+<link rel="stylesheet" href="../i18n.css">
 <link rel="stylesheet" href="bonus-assignment.css">
 </head>
 <body>
@@ -20,30 +21,32 @@
         <div class="pill pill--time" id="timer">Time 00:00</div>
         <h1 class="ps-title" id="psTitle">Variables</h1>
         <div class="ps-actions">
-          <div class="pill pill--time" id="psCount">Questions</div>
-          <button type="button" class="pill pill--start" id="startBtn">Start</button>
+          <div data-lang-toggle></div>
+          <div class="pill pill--time" id="psCount" data-i18n="questions_word">Questions</div>
+          <button type="button" class="pill pill--start" id="startBtn" data-i18n="start">Start</button>
         </div>
       </header>
 
       <div class="ps-scroll" id="psScroll">
         <div class="ps-starthint" id="startHint">
-          <p>Press <b>Start</b> to begin the timer and unlock the questions.</p>
-          <p class="ps-startsub">Bonus assignments have no difficulty selection. 15 questions per concept (OX · Fill-in · Matching).</p>
+          <p data-i18n-html="start_hint_1">Press <b>Start</b> to begin the timer and unlock the questions.</p>
+          <p class="ps-startsub" data-i18n="bonus_start_hint_2">Bonus assignments have no difficulty selection. 15 questions per concept (OX · Fill-in · Matching).</p>
         </div>
         <div class="ps-questions is-locked" id="questions" aria-hidden="true"></div>
       </div>
 
       <footer class="ps-bottom">
         <span class="ps-savenote" id="saveNote"></span>
-        <button type="button" class="pill pill--submit" id="submitBtn" disabled>Submit</button>
+        <button type="button" class="pill pill--submit" id="submitBtn" data-i18n="submit" disabled>Submit</button>
       </footer>
 
     </section>
-    <a class="ps-back" href="../bonus/bonus.html">← Back to Bonus</a>
+    <a class="ps-back" href="../bonus/bonus.html" data-i18n="back_to_bonus">← Back to Bonus</a>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../supabase-config.js"></script>
-  <script src="bonus-assignment.js?v=2"></script>
+  <script src="../i18n.js"></script>
+  <script src="bonus-assignment.js?v=3"></script>
 </body>
 </html>

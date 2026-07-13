@@ -9,7 +9,7 @@ const topicSlug = params.get("topic") || "";
 const topicName = params.get("name") || "Bonus";
 document.getElementById("psTitle").textContent = topicName;
 
-const TYPE_LABEL = { ox: "OX", blank: "Fill-in", matching: "Matching" };
+const TYPE_KEY = { ox: "type_ox", blank: "type_blank", matching: "type_matching" };
 
 // 상태
 let started = false, submitted = false, seconds = 0, timerId = null;
@@ -42,6 +42,21 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
+let qCount = 0;
+function updateTimer() { timerEl.textContent = `${t("time_prefix")} ${fmt(seconds)}`; }
+function refreshChrome() {
+  updateTimer();
+  if (started) {
+    psCount.textContent = t("questions_count", { n: qCount });
+    startBtn.textContent = t("in_progress");
+  } else {
+    startBtn.textContent = t("start");
+  }
+  submitBtn.textContent = submitted ? t("submitted") : t("submit");
+}
+window.addEventListener("i18n:change", refreshChrome);
+refreshChrome();
+
 // ---- 문제 렌더 ----
 function renderQuestion(q, i) {
   const n = q.question_number ?? i + 1;
@@ -51,7 +66,7 @@ function renderQuestion(q, i) {
       <button type="button" class="ox-btn" data-v="O">O</button>
       <button type="button" class="ox-btn" data-v="X">X</button></div>`;
   } else if (q.question_type === "blank") {
-    body = `<input type="text" class="blank-input" placeholder="Your answer" autocomplete="off" spellcheck="false">`;
+    body = `<input type="text" class="blank-input" placeholder="${t("answer_placeholder")}" autocomplete="off" spellcheck="false">`;
   } else if (q.question_type === "matching") {
     const ch = q.choices || {};
     const left = Array.isArray(ch.left) ? ch.left : [];
@@ -61,11 +76,11 @@ function renderQuestion(q, i) {
       <div class="match-row" data-left="${escapeHtml(term.id)}">
         <div class="match-term">${escapeHtml(term.text)}</div>
         <div class="match-link">—</div>
-        <select class="match-select"><option value="" selected disabled>Select a match</option>${opts}</select>
+        <select class="match-select"><option value="" selected disabled>${t("select_a_match")}</option>${opts}</select>
       </div>`).join("")}</div>`;
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
-    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${TYPE_LABEL[q.question_type] || q.question_type}</span></div>
+    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
     <p class="q-text">${escapeHtml(q.question_text || "")}</p>
     <div class="q-body">${body}</div>
     <div class="q-result" id="result-${q.id}"></div>
@@ -87,9 +102,9 @@ startBtn.addEventListener("click", async () => {
   try {
     const { data: sd, error: sErr } = await window.sb.rpc("start_bonus_assignment", { p_topic_slug: topicSlug });
     if (sErr) {
-      const msg = /no questions/i.test(sErr.message) ? "No questions have been uploaded for this concept yet."
-        : /not available/i.test(sErr.message) ? "This concept is not published yet."
-        : `Failed to start: ${sErr.message}`;
+      const msg = /no questions/i.test(sErr.message) ? t("err_no_questions_topic")
+        : /not available/i.test(sErr.message) ? t("err_topic_not_published")
+        : `${sErr.message}`;
       startHint.innerHTML = `<p style="color:#b3352c">${msg}</p>`;
       startBtn.disabled = false; startBtn.textContent = orig;
       return;
@@ -99,24 +114,25 @@ startBtn.addEventListener("click", async () => {
 
     const { data: qs, error: qErr } = await window.sb.rpc("get_bonus_questions", { p_bonus_question_set_id: bonusSetId });
     if (qErr || !qs || !qs.length) {
-      startHint.innerHTML = `<p style="color:#b3352c">Could not load questions.</p>`;
+      startHint.innerHTML = `<p style="color:#b3352c">${t("err_load_questions")}</p>`;
       startBtn.disabled = false; startBtn.textContent = orig;
       return;
     }
 
     questions = qs;
+    qCount = qs.length;
     qs.forEach((q) => { questionsById[q.id] = q; });
     qWrap.innerHTML = qs.map(renderQuestion).join("");
-    psCount.textContent = `${qs.length} Questions`;
+    psCount.textContent = t("questions_count", { n: qCount });
 
     started = true;
     qWrap.classList.remove("is-locked");
     qWrap.setAttribute("aria-hidden", "false");
     startHint.style.display = "none";
-    startBtn.textContent = "In progress";
+    startBtn.textContent = t("in_progress");
     submitBtn.disabled = false;
-    timerId = setInterval(() => { seconds++; timerEl.textContent = `Time ${fmt(seconds)}`; }, 1000);
-    saveNote.textContent = "In progress";
+    timerId = setInterval(() => { seconds++; updateTimer(); }, 1000);
+    saveNote.textContent = t("in_progress");
   } catch (err) {
     console.error(err);
     startHint.innerHTML = `<p style="color:#b3352c">Error: ${err.message}</p>`;
@@ -153,12 +169,12 @@ function collectAnswers() {
 // ---- 제출 + 채점 ----
 submitBtn.addEventListener("click", async () => {
   if (!started || submitted) return;
-  if (!confirm("Submit your answers? You won't be able to edit them afterwards.")) return;
+  if (!confirm(t("confirm_submit"))) return;
 
   submitted = true;
   clearInterval(timerId);
   submitBtn.disabled = true;
-  submitBtn.textContent = "Grading…";
+  submitBtn.textContent = t("grading");
   document.querySelectorAll(".q button, .q input, .q select").forEach((el) => (el.disabled = true));
 
   try {
@@ -174,11 +190,11 @@ submitBtn.addEventListener("click", async () => {
 
     renderResults(res);
     showSummary(res);
-    submitBtn.textContent = "Submitted";
-    saveNote.textContent = "Submitted";
+    submitBtn.textContent = t("submitted");
+    saveNote.textContent = t("submitted");
   } catch (err) {
     console.error(err);
-    submitBtn.textContent = "Submit failed";
+    submitBtn.textContent = t("submit_failed");
     alert("Error during submit/grading: " + (err.message || err));
   }
 });
@@ -201,7 +217,7 @@ function renderResults(res) {
     if (r.is_correct) {
       el.className = "q-result show q-result--ok";
       qEl?.classList.add("graded-ok");
-      el.innerHTML = `<p class="r-title">${ICON.ok} Correct</p>`;
+      el.innerHTML = `<p class="r-title">${ICON.ok} ${t("res_correct")}</p>`;
       return;
     }
 
@@ -210,10 +226,10 @@ function renderResults(res) {
 
     let detail = "";
     if (r.type === "ox") {
-      detail = `Answer: <b>${escapeHtml(String(r.correct ?? ""))}</b>. ${escapeHtml(r.wrong_comment || "")}`;
+      detail = `${t("res_answer")}: <b>${escapeHtml(String(r.correct ?? ""))}</b>. ${escapeHtml(r.wrong_comment || "")}`;
     } else if (r.type === "blank") {
       const acc = Array.isArray(r.correct) ? r.correct[0] : r.correct;
-      detail = `Accepted answer: <b>${escapeHtml(String(acc ?? ""))}</b>. ${escapeHtml(r.wrong_comment || "")}`;
+      detail = `${t("res_accepted")}: <b>${escapeHtml(String(acc ?? ""))}</b>. ${escapeHtml(r.wrong_comment || "")}`;
     } else if (r.type === "matching") {
       // 학생 선택과 정답 비교로 각 줄 표시
       const pairs = Array.isArray(r.correct) ? r.correct : [];
@@ -227,10 +243,10 @@ function renderResults(res) {
         });
       }
       const list = pairs.map((p) => `<li>${pairText(q, p.left, p.right)}</li>`).join("");
-      detail = `${escapeHtml(r.wrong_comment || "Some pairs are incorrect.")}` +
-        (list ? `<br><b>Correct matches</b><ul>${list}</ul>` : "");
+      detail = `${escapeHtml(r.wrong_comment || "")}` +
+        (list ? `<br><b>${t("res_correct_matches")}</b><ul>${list}</ul>` : "");
     }
-    el.innerHTML = `<p class="r-title">${ICON.wrong} Incorrect</p><p class="r-comment">${detail}</p>`;
+    el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><p class="r-comment">${detail}</p>`;
   });
 }
 
@@ -240,9 +256,9 @@ function showSummary(res) {
   const pct = res.total_score ?? (total ? Math.round((correct / total) * 100) : 0);
   const banner = document.createElement("div");
   banner.className = "ps-summary";
-  banner.innerHTML = `<h3>Results</h3>
-    <p><span class="s-score">${correct} / ${total}</span> correct (${pct}%) · Time ${fmt(seconds)}</p>
-    <p>Bonus assignments are fully auto-graded.</p>`;
+  banner.innerHTML = `<h3>${t("results")}</h3>
+    <p><span class="s-score">${correct} / ${total}</span> ${t("correct_word")} (${pct}%) · ${t("time_prefix")} ${fmt(seconds)}</p>
+    <p>${t("bonus_autograde_note")}</p>`;
   qWrap.prepend(banner);
   qWrap.scrollIntoView({ behavior: "smooth" });
 }

@@ -8,21 +8,24 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../design-system.css">
-<link rel="stylesheet" href="bonus.css">
+<link rel="stylesheet" href="../i18n.css">
+<link rel="stylesheet" href="bonus.css?v=2">
 </head>
 <body>
 
   <header class="home-top">
-    <a class="home-logout" href="../home/home.html">← Home</a>
+    <a class="home-logout" href="../home/home.html" data-i18n="home_back">← Home</a>
+    <div data-lang-toggle></div>
   </header>
 
   <main class="bonus-main">
-    <h1 class="bonus-title">Bonus Challenge</h1>
+    <h1 class="bonus-title" data-i18n="bonus_title">Bonus Challenge</h1>
     <section class="concept-grid" id="conceptGrid" aria-label="Concepts"></section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../supabase-config.js"></script>
-  <script src="bonus.js?v=2"></script>
+  <script src="../i18n.js"></script>
+  <script src="bonus.js?v=3"></script>
 </body>
 </html>

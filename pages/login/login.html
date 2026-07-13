@@ -8,15 +8,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../design-system.css">
+<link rel="stylesheet" href="../i18n.css">
 <link rel="stylesheet" href="login.css">
 </head>
 <body>
+
+  <div class="lang-float" data-lang-toggle></div>
 
   <main class="center-screen">
     <form class="glass-card login-card" id="loginForm" autocomplete="on" novalidate>
 
       <div class="field-row">
-        <label class="field-label" for="studentId">ID</label>
+        <label class="field-label" for="studentId" data-i18n="login_id_label">ID</label>
         <div class="field-control">
           <input class="field-input" id="studentId" name="studentId" type="text"
                  placeholder="Student001" autocomplete="username" required>
@@ -24,11 +27,11 @@
       </div>
 
       <div class="field-row">
-        <label class="field-label" for="password">PW</label>
+        <label class="field-label" for="password" data-i18n="login_pw_label">PW</label>
         <div class="field-control">
           <input class="field-input" id="password" name="password" type="password"
-                 placeholder="Password" autocomplete="current-password" required>
-          <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" aria-pressed="false">
+                 placeholder="Password" data-i18n-ph="login_pw_ph" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" data-i18n-aria="show_password" aria-pressed="false">
             <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.45 18.45 0 0 0 2 12s3 8 10 8a9.12 9.12 0 0 0 5.39-1.61"/>
               <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
@@ -44,13 +47,14 @@
 
       <p class="error-text login-error" id="loginError" role="alert" hidden></p>
 
-      <button type="submit" class="btn-green" id="loginBtn">Login</button>
+      <button type="submit" class="btn-green" id="loginBtn" data-i18n="login_btn">Login</button>
 
     </form>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../supabase-config.js"></script>
-  <script src="login.js?v=2"></script>
+  <script src="../i18n.js"></script>
+  <script src="login.js?v=3"></script>
 </body>
 </html>

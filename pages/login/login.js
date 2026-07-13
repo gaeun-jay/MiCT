@@ -16,7 +16,7 @@ pwToggle.addEventListener("click", () => {
   const shown = pwInput.type === "text";
   pwInput.type = shown ? "password" : "text";
   pwToggle.setAttribute("aria-pressed", String(!shown));
-  pwToggle.setAttribute("aria-label", shown ? "Show password" : "Hide password");
+  pwToggle.setAttribute("aria-label", shown ? t("show_password") : t("hide_password"));
   pwInput.focus({ preventScroll: true });
 });
 
@@ -41,12 +41,12 @@ form.addEventListener("submit", async (e) => {
   const password = pwInput.value;
 
   if (!studentId) {
-    showError("Please enter your ID.");
+    showError(t("login_err_id"));
     idInput.focus();
     return;
   }
   if (!password) {
-    showError("Please enter your password.");
+    showError(t("login_err_pw"));
     pwInput.focus();
     return;
   }
@@ -62,7 +62,7 @@ form.addEventListener("submit", async (e) => {
     // 2) Supabase Auth 로그인
     const { data, error } = await window.sb.auth.signInWithPassword({ email, password });
     if (error) {
-      showError("Login failed. Check your ID and password.");
+      showError(t("login_err_fail"));
       loginBtn.disabled = false;
       loginBtn.textContent = original;
       return;
@@ -77,7 +77,7 @@ form.addEventListener("submit", async (e) => {
 
     if (student && student.is_active === false) {
       await window.sb.auth.signOut();
-      showError("This account is deactivated. Please contact your administrator.");
+      showError(t("login_err_deactivated"));
       loginBtn.disabled = false;
       loginBtn.textContent = original;
       return;
@@ -103,7 +103,7 @@ form.addEventListener("submit", async (e) => {
       : "../home/home.html";
   } catch (err) {
     console.error(err);
-    showError("Login failed. Please try again.");
+    showError(t("login_err_generic"));
     loginBtn.disabled = false;
     loginBtn.textContent = original;
   }

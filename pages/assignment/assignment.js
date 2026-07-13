@@ -15,9 +15,10 @@ async function getToken() {
 
 const params = new URLSearchParams(location.search);
 const classNo = params.get("class") || "1";
-document.getElementById("psTitle").textContent = `Assignment ${classNo}`;
 
-const TYPE_LABEL = { ox: "OX", multiple_choice: "Multiple Choice", blank: "Fill-in", code: "Code" };
+const TYPE_KEY = { ox: "type_ox", multiple_choice: "type_mc", blank: "type_blank", code: "type_code" };
+const DIFF_KEY = { Easy: "diff_easy", Medium: "diff_medium", Hard: "diff_hard" };
+const diffLabelOf = (v) => t(DIFF_KEY[v] || "diff_easy");
 
 // ---- 상태 ----
 let started = false, submitted = false, difficulty = "Easy";
@@ -36,6 +37,25 @@ const diffBtn = document.getElementById("diffBtn");
 const diffMenu = document.getElementById("diffMenu");
 const saveNote = document.getElementById("saveNote");
 const psCount = document.getElementById("psCount");
+const psTitle = document.getElementById("psTitle");
+
+let qCount = 0;
+function updateTimer() { timerEl.textContent = `${t("time_prefix")} ${fmt(seconds)}`; }
+
+// 언어 전환 시 정적 UI(제목/버튼/난이도/타이머/문제수) 갱신
+function refreshChrome() {
+  psTitle.textContent = `${t("assignment")} ${classNo}`;
+  updateTimer();
+  if (started) {
+    psCount.textContent = t("questions_count", { n: qCount });
+    startBtn.textContent = submitted ? t("in_progress") : t("in_progress");
+  } else {
+    startBtn.textContent = t("start");
+    diffBtn.innerHTML = `${diffLabelOf(difficulty)} <span class="caret" aria-hidden="true"></span>`;
+  }
+  submitBtn.textContent = submitted ? t("submitted") : t("submit");
+}
+window.addEventListener("i18n:change", refreshChrome);
 
 // ---- 인증 가드 ----
 (async () => {
@@ -55,7 +75,7 @@ diffMenu.addEventListener("click", (e) => {
   if (!li) return;
   difficulty = li.dataset.v;
   diffMenu.querySelectorAll("li").forEach((x) => x.classList.toggle("is-sel", x === li));
-  diffBtn.innerHTML = `${difficulty} <span class="caret" aria-hidden="true"></span>`;
+  diffBtn.innerHTML = `${diffLabelOf(difficulty)} <span class="caret" aria-hidden="true"></span>`;
   diffMenu.hidden = true;
 });
 document.addEventListener("click", (e) => {
@@ -64,6 +84,8 @@ document.addEventListener("click", (e) => {
 
 // ---- 타이머 ----
 const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+refreshChrome();  // 초기 언어로 제목/버튼/난이도/타이머 표기
 
 // ---- 문제 렌더 ----
 function renderQuestion(q, i) {
@@ -79,12 +101,12 @@ function renderQuestion(q, i) {
       `<button type="button" class="mc-opt" data-v="${ci + 1}">
          <span class="mc-num">${ci + 1}</span><span>${escapeHtml(c)}</span></button>`).join("")}</div>`;
   } else if (q.question_type === "blank") {
-    body = `<input type="text" class="blank-input" placeholder="Your answer" autocomplete="off" spellcheck="false">`;
+    body = `<input type="text" class="blank-input" placeholder="${t("answer_placeholder")}" autocomplete="off" spellcheck="false">`;
   } else if (q.question_type === "code") {
     body = `<textarea class="code-input" spellcheck="false" placeholder="# Write your code here\n"></textarea>`;
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
-    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${TYPE_LABEL[q.question_type] || q.question_type}</span></div>
+    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
     <p class="q-text">${escapeHtml(q.question_text || "")}</p>
     <div class="q-body">${body}</div>
     <div class="q-result" id="result-${q.id}"></div>
@@ -117,9 +139,9 @@ startBtn.addEventListener("click", async () => {
       p_difficulty: difficulty.toLowerCase(),
     });
     if (sErr) {
-      const msg = /no questions/i.test(sErr.message) ? "No questions have been uploaded for this difficulty yet."
-        : /not available/i.test(sErr.message) ? "This assignment is not published yet."
-        : `Failed to start: ${sErr.message}`;
+      const msg = /no questions/i.test(sErr.message) ? t("err_no_questions_diff")
+        : /not available/i.test(sErr.message) ? t("err_not_published")
+        : `${sErr.message}`;
       startHint.innerHTML = `<p style="color:#b3352c">${msg}</p>`;
       startBtn.disabled = false; startBtn.textContent = orig;
       return;
@@ -131,25 +153,26 @@ startBtn.addEventListener("click", async () => {
       p_question_set_id: questionSetId,
     });
     if (qErr || !qs || !qs.length) {
-      startHint.innerHTML = `<p style="color:#b3352c">Could not load questions.</p>`;
+      startHint.innerHTML = `<p style="color:#b3352c">${t("err_load_questions")}</p>`;
       startBtn.disabled = false; startBtn.textContent = orig;
       return;
     }
 
     questions = qs;
+    qCount = qs.length;
     qs.forEach((q) => { questionsById[q.id] = q; });
     qWrap.innerHTML = qs.map(renderQuestion).join("");
-    psCount.textContent = `${qs.length} Questions`;
+    psCount.textContent = t("questions_count", { n: qCount });
 
     started = true;
     qWrap.classList.remove("is-locked");
     qWrap.setAttribute("aria-hidden", "false");
     startHint.style.display = "none";
     diffWrap.classList.add("is-disabled");
-    startBtn.textContent = "In progress";
+    startBtn.textContent = t("in_progress");
     submitBtn.disabled = false;
-    timerId = setInterval(() => { seconds++; timerEl.textContent = `Time ${fmt(seconds)}`; }, 1000);
-    saveNote.textContent = "In progress";
+    timerId = setInterval(() => { seconds++; updateTimer(); }, 1000);
+    saveNote.textContent = t("in_progress");
   } catch (err) {
     console.error(err);
     startHint.innerHTML = `<p style="color:#b3352c">Error: ${err.message}</p>`;
@@ -187,12 +210,12 @@ function collectAnswers() {
 // ============================================================
 submitBtn.addEventListener("click", async () => {
   if (!started || submitted) return;
-  if (!confirm("Submit your answers? You won't be able to edit them afterwards.")) return;
+  if (!confirm(t("confirm_submit"))) return;
 
   submitted = true;
   clearInterval(timerId);
   submitBtn.disabled = true;
-  submitBtn.textContent = "Grading…";
+  submitBtn.textContent = t("grading");
   // 입력 잠금
   document.querySelectorAll(".q button, .q input, .q textarea").forEach((el) => (el.disabled = true));
 
@@ -226,11 +249,11 @@ submitBtn.addEventListener("click", async () => {
     }
 
     showSummary(obj);
-    submitBtn.textContent = "Submitted";
-    saveNote.textContent = "Submitted";
+    submitBtn.textContent = t("submitted");
+    saveNote.textContent = t("submitted");
   } catch (err) {
     console.error(err);
-    submitBtn.textContent = "Submit failed";
+    submitBtn.textContent = t("submit_failed");
     alert("Error during submit/grading: " + (err.message || err));
   }
 });
@@ -263,28 +286,28 @@ function renderObjectiveResults(obj) {
     if (r.is_correct) {
       el.className = "q-result show q-result--ok";
       qEl?.classList.add("graded-ok");
-      el.innerHTML = `<p class="r-title">${ICON.ok} Correct</p>`;
+      el.innerHTML = `<p class="r-title">${ICON.ok} ${t("res_correct")}</p>`;
     } else {
       el.className = "q-result show q-result--wrong";
       qEl?.classList.add("graded-wrong");
-      el.innerHTML = `<p class="r-title">${ICON.wrong} Incorrect</p><p class="r-comment">Answer: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
+      el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><p class="r-comment">${t("res_answer")}: ${correctText(r)}. ${escapeHtml(r.wrong_comment || "")}</p>`;
     }
   });
 }
 function markCodePending() {
   questions.filter((q) => q.question_type === "code").forEach((q) => {
     const el = document.getElementById(`result-${q.id}`);
-    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">${ICON.pending} Grading with AI…</p>`; }
+    if (el) { el.className = "q-result show q-result--review"; el.innerHTML = `<p class="r-title">${ICON.pending} ${t("res_grading_ai")}</p>`; }
   });
 }
 function markCodeError(msg) {
   questions.filter((q) => q.question_type === "code").forEach((q) => {
     const el = document.getElementById(`result-${q.id}`);
-    if (el) el.innerHTML = `<p class="r-title">Code grading error</p><p class="r-comment">${escapeHtml(msg)}</p>`;
+    if (el) el.innerHTML = `<p class="r-title">${t("res_code_error")}</p><p class="r-comment">${escapeHtml(msg)}</p>`;
   });
 }
 function renderCodeResults(results) {
-  const STATUS = { correct: "Correct", needs_revision: "Needs revision", manual_review: "Manual review" };
+  const STATUS = { correct: t("res_correct"), needs_revision: t("res_needs_revision"), manual_review: t("res_manual_review") };
   const CLS = { correct: "q-result--ok", needs_revision: "q-result--revise", manual_review: "q-result--review" };
   const STATUS_ICON = { correct: ICON.ok, needs_revision: ICON.wrong, manual_review: ICON.pending };
   results.forEach((r) => {
@@ -294,18 +317,19 @@ function renderCodeResults(results) {
     const strengths = (r.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     const issues = (r.issues || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     el.innerHTML =
-      `<p class="r-title">${STATUS_ICON[r.status] || ICON.pending} ${STATUS[r.status] || r.status} · ${r.score}${r.max_score ? ` / ${r.max_score}` : ""} pts</p>
+      `<p class="r-title">${STATUS_ICON[r.status] || ICON.pending} ${STATUS[r.status] || r.status} · ${r.score}${r.max_score ? ` / ${r.max_score}` : ""} ${t("pts")}</p>
        <p class="r-comment">${escapeHtml(r.comment || "")}</p>
-       ${strengths ? `<p class="r-comment"><b>Strengths</b><ul>${strengths}</ul></p>` : ""}
-       ${issues ? `<p class="r-comment"><b>To fix</b><ul>${issues}</ul></p>` : ""}`;
+       ${strengths ? `<p class="r-comment"><b>${t("res_strengths")}</b><ul>${strengths}</ul></p>` : ""}
+       ${issues ? `<p class="r-comment"><b>${t("res_tofix")}</b><ul>${issues}</ul></p>` : ""}`;
   });
 }
 function showSummary(obj) {
   const banner = document.createElement("div");
   banner.className = "ps-summary";
-  banner.innerHTML = `<h3>Results</h3>
-    <p>Auto-graded: <span class="s-score">${obj.objective_correct} / ${obj.objective_total}</span> correct · Objective <b>${obj.objective_points ?? 0}</b> / ${obj.objective_max ?? 0} pts · Time ${fmt(seconds)}</p>
-    <p>Code questions are evaluated by AI (worth ${obj.objective_max != null ? 100 - obj.objective_max : 50} pts total) — results appear under each question.</p>`;
+  const codePts = obj.objective_max != null ? 100 - obj.objective_max : 50;
+  banner.innerHTML = `<h3>${t("results")}</h3>
+    <p>${t("auto_graded")}: <span class="s-score">${obj.objective_correct} / ${obj.objective_total}</span> ${t("correct_word")} · ${t("objective")} <b>${obj.objective_points ?? 0}</b> / ${obj.objective_max ?? 0} ${t("pts")} · ${t("time_prefix")} ${fmt(seconds)}</p>
+    <p>${t("code_ai_note", { n: codePts })}</p>`;
   qWrap.prepend(banner);
   qWrap.scrollIntoView({ behavior: "smooth" });
 }

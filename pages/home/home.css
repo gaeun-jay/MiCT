@@ -8,9 +8,14 @@
   z-index: 20;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 16px;
   padding: 16px clamp(16px, 3vw, 40px);
+}
+.home-top-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .home-chip {
