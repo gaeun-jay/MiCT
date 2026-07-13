@@ -50,11 +50,13 @@ function cardHTML(item) {
   // 공개 클래스 — 난이도 3개 각각 도전
   const states = DIFFS.map((d) => ({ d, state: diffState(item.byDiff[d]), score: item.byDiff[d]?.total_score }));
   const doneCount = states.filter((s) => s.state === "done").length;
+  const startedCount = states.filter((s) => s.state !== "open").length; // 완료 or 진행중
   const allDone = doneCount === DIFFS.length;
+  // 하나라도 시작하면 진행중(n/3), 전부 완료면 완료, 아무것도 안 하면 미시작
   const badge = allDone
     ? `<span class="asn-badge asn-badge--done">${t("badge_done")}</span>`
-    : doneCount > 0
-      ? `<span class="asn-badge asn-badge--progress">${doneCount}/${DIFFS.length}</span>`
+    : startedCount > 0
+      ? `<span class="asn-badge asn-badge--progress">${t("badge_progress")}${doneCount > 0 ? ` ${doneCount}/${DIFFS.length}` : ""}</span>`
       : `<span class="asn-badge asn-badge--todo">${t("badge_todo")}</span>`;
 
   const chips = states.map((s) => {
