@@ -711,7 +711,7 @@ async function translateQuestions(questions) {
   if (!items.length) return;
 
   const token = await getToken();
-  if (!token) return;
+  if (!token) return { ok: false, count: 0, error: "no token" };
   let map = {};
   try {
     const resp = await fetch(`${API_BASE}/api/translate`, {
@@ -720,15 +720,16 @@ async function translateQuestions(questions) {
       body: JSON.stringify({ items, target: "uk" }),
     });
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) { console.warn("[translate] 실패:", data.error || resp.status); return; }
+    if (!resp.ok) { console.warn("[translate] 실패:", data.error || resp.status); return { ok: false, count: 0, error: data.error || resp.status }; }
     (data.translations || []).forEach((t) => { map[t.key] = t.text; });
   } catch (e) {
     console.warn("[translate] 오류:", e);
-    return;
+    return { ok: false, count: 0, error: String(e) };
   }
 
+  let count = 0;
   questions.forEach((q, i) => {
-    if (map[`q${i}.t`]) q.question_text_uk = map[`q${i}.t`];
+    if (map[`q${i}.t`]) { q.question_text_uk = map[`q${i}.t`]; count++; }
     if (map[`q${i}.w`]) q.wrong_comment_uk = map[`q${i}.w`];
     if (q.type === "multiple_choice" && Array.isArray(q.choices)) {
       q.choices_uk = q.choices.map((c, ci) => map[`q${i}.c${ci}`] ?? String(c));
@@ -740,6 +741,7 @@ async function translateQuestions(questions) {
       };
     }
   });
+  return { ok: true, count };
 }
 
 async function uploadBonusMd(file) {
@@ -752,7 +754,7 @@ async function uploadBonusMd(file) {
   if (!qs.length) { alert("보너스 문제를 찾지 못했습니다. (### Question, type: ox|blank|matching)"); return; }
 
   // 우크라이나어 번역 (코드 보존) — 실패해도 진행
-  await translateQuestions(qs);
+  const tr = await translateQuestions(qs);
 
   // 1) bonus_topic 확보 (slug 기준, seed 에 이미 있으면 재사용)
   let { data: topic } = await window.sb.from("bonus_topics").select("id, title").eq("slug", meta.slug).maybeSingle();
@@ -801,7 +803,8 @@ async function uploadBonusMd(file) {
   const { error: qErr } = await window.sb.from("questions").insert(rows);
   if (qErr) { alert("문제 저장 실패: " + qErr.message); return; }
 
-  alert(`"${file.name}" 업로드 완료\n${meta.title || meta.slug} · ${rows.length}개 문제 등록`);
+  const trNote = tr && tr.ok ? `\n우크라이나어 번역: ${tr.count}개` : `\n⚠ 우크라이나어 번역 실패 (${tr?.error || "?"}) — 영어로 표시됩니다`;
+  alert(`"${file.name}" 업로드 완료\n${meta.title || meta.slug} · ${rows.length}개 문제 등록${trNote}`);
   await loadProblemGrid();
 }
 
@@ -844,7 +847,7 @@ problemGrid.addEventListener("change", async (e) => {
   if (!token) { alert("로그인이 만료되었습니다. 다시 로그인해 주세요."); return; }
 
   // 우크라이나어 번역 (코드 보존) — 실패해도 진행
-  await translateQuestions(parsed.questions);
+  const tr = await translateQuestions(parsed.questions);
 
   try {
     const resp = await fetch(`${API_BASE}/api/upload-questions`, {
@@ -859,7 +862,8 @@ problemGrid.addEventListener("change", async (e) => {
     }
     const detail = Object.entries(data.counts || {}).map(([d, n]) => `${d} ${n}`).join(", ");
     console.log("[문제 관리] DB 업로드:", file.name, data.total + "문제");
-    alert(`"${file.name}" 업로드 완료\nDB에 ${data.total}개 문제 등록 (${detail})`);
+    const trNote = tr && tr.ok ? `\n우크라이나어 번역: ${tr.count}개` : `\n⚠ 우크라이나어 번역 실패 (${tr?.error || "?"}) — 영어로 표시됩니다`;
+    alert(`"${file.name}" 업로드 완료\nDB에 ${data.total}개 문제 등록 (${detail})${trNote}`);
     await loadProblemGrid(); // 등록 문제수 갱신
     showPreview(key);
   } catch (err) {

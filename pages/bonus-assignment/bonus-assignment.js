@@ -68,6 +68,8 @@ function applyQuestionLang() {
   document.querySelectorAll("#questions .q").forEach((qEl) => {
     const q = questionsById[qEl.dataset.qid];
     if (!q) return;
+    const numEl = qEl.querySelector(".q-num");
+    if (numEl) numEl.textContent = `${t("question_single")} ${q.question_number ?? ""}`.trim();
     const tEl = qEl.querySelector(".q-text");
     if (tEl) tEl.textContent = qText(q);
     if (q.question_type === "matching") {
@@ -112,7 +114,7 @@ function renderQuestion(q, i) {
       </div>`).join("")}</div>`;
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
-    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
+    <div class="q-head"><span class="q-num">${t("question_single")} ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
     <p class="q-text">${escapeHtml(qText(q))}</p>
     <div class="q-body">${body}</div>
     <div class="q-result" id="result-${q.id}"></div>
@@ -167,7 +169,7 @@ startBtn.addEventListener("click", async () => {
     saveNote.textContent = t("in_progress");
   } catch (err) {
     console.error(err);
-    startHint.innerHTML = `<p style="color:#b3352c">Error: ${err.message}</p>`;
+    startHint.innerHTML = `<p style="color:#b3352c">${t("err_generic")}</p>`;
     startBtn.disabled = false; startBtn.textContent = orig;
   }
 });
@@ -227,7 +229,7 @@ submitBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
     submitBtn.textContent = t("submit_failed");
-    alert("Error during submit/grading: " + (err.message || err));
+    alert(t("err_submit") + " " + (err.message || err));
   }
 });
 
@@ -278,7 +280,7 @@ function renderResults(res) {
       detail = `${escapeHtml(wcText(r))}` +
         (list ? `<br><b>${t("res_correct_matches")}</b><ul>${list}</ul>` : "");
     }
-    el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><p class="r-comment">${detail}</p>`;
+    el.innerHTML = `<p class="r-title">${ICON.wrong} ${t("res_incorrect")}</p><div class="r-comment">${detail}</div>`;
   });
 }
 

@@ -39,13 +39,13 @@ async function loadBonus() {
   );
 
   grid.innerHTML = topics
-    .map((t, i) => {
-      const done = doneByTopic.has(t.id);
+    .map((topic, i) => {
+      const done = doneByTopic.has(topic.id);
       return `
       <a class="concept-card glass-card ${done ? "is-done" : ""}"
-         href="../bonus-assignment/bonus-assignment.html?topic=${encodeURIComponent(t.slug)}&name=${encodeURIComponent(t.title || t.slug)}">
+         href="../bonus-assignment/bonus-assignment.html?topic=${encodeURIComponent(topic.slug)}&name=${encodeURIComponent(topic.title || topic.slug)}">
         <span class="concept-idx">${String(i + 1).padStart(2, "0")}</span>
-        <span class="concept-name">${escapeHtml(t.title || t.slug)}</span>
+        <span class="concept-name">${escapeHtml(topic.title || topic.slug)}</span>
       </a>`;
     })
     .join("");

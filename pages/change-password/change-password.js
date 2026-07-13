@@ -55,18 +55,9 @@ form.addEventListener("submit", async (e) => {
       return;
     }
 
-    // 2) must_change_password = false (RPC)
+    // 2) must_change_password = false (RPC) — 실패해도 비번은 바뀌었으므로 홈으로 진행
     const { error: rpcErr } = await window.sb.rpc("mark_password_changed");
-    if (rpcErr) {
-      console.error("[mark_password_changed]", rpcErr);
-      // 원인을 바로 볼 수 있게 표시 (디버깅용)
-      alert(
-        "비밀번호는 변경됐지만 상태 갱신(RPC)에 실패했습니다:\n\n" +
-        `message: ${rpcErr.message}\n` +
-        `code: ${rpcErr.code || "-"}\n` +
-        `hint: ${rpcErr.hint || "-"}`
-      );
-    }
+    if (rpcErr) console.error("[mark_password_changed]", rpcErr);
 
     // 3) 홈으로
     window.location.href = "../home/home.html";

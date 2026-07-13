@@ -56,7 +56,7 @@ function refreshChrome() {
   updateTimer();
   if (started) {
     psCount.textContent = t("questions_count", { n: qCount });
-    startBtn.textContent = submitted ? t("in_progress") : t("in_progress");
+    startBtn.textContent = t("in_progress");
   } else {
     startBtn.textContent = t("start");
     diffBtn.innerHTML = `${diffLabelOf(difficulty)} <span class="caret" aria-hidden="true"></span>`;
@@ -70,6 +70,8 @@ function applyQuestionLang() {
   document.querySelectorAll("#questions .q").forEach((qEl) => {
     const q = questionsById[qEl.dataset.qid];
     if (!q) return;
+    const numEl = qEl.querySelector(".q-num");
+    if (numEl) numEl.textContent = `${t("question_single")} ${q.question_number ?? ""}`.trim();
     const tEl = qEl.querySelector(".q-text");
     if (tEl) tEl.textContent = qText(q);
     if (q.question_type === "multiple_choice") {
@@ -134,7 +136,7 @@ function renderQuestion(q, i) {
     body = `<textarea class="code-input" spellcheck="false" placeholder="# Write your code here\n"></textarea>`;
   }
   return `<article class="q" data-qid="${q.id}" data-type="${q.question_type}">
-    <div class="q-head"><span class="q-num">Question ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
+    <div class="q-head"><span class="q-num">${t("question_single")} ${n}</span><span class="q-type">${t(TYPE_KEY[q.question_type]) || q.question_type}</span></div>
     <p class="q-text">${escapeHtml(qText(q))}</p>
     <div class="q-body">${body}</div>
     <div class="q-result" id="result-${q.id}"></div>
@@ -204,7 +206,7 @@ startBtn.addEventListener("click", async () => {
     saveNote.textContent = t("in_progress");
   } catch (err) {
     console.error(err);
-    startHint.innerHTML = `<p style="color:#b3352c">Error: ${err.message}</p>`;
+    startHint.innerHTML = `<p style="color:#b3352c">${t("err_generic")}</p>`;
     startBtn.disabled = false; startBtn.textContent = orig;
   }
 });
@@ -283,7 +285,7 @@ submitBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
     submitBtn.textContent = t("submit_failed");
-    alert("Error during submit/grading: " + (err.message || err));
+    alert(t("err_submit") + " " + (err.message || err));
   }
 });
 
@@ -343,13 +345,18 @@ function renderCodeResults(results) {
     const el = document.getElementById(`result-${r.question_id}`);
     if (!el) return;
     el.className = `q-result show ${CLS[r.status] || "q-result--review"}`;
-    const strengths = (r.strengths || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
-    const issues = (r.issues || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+    // 우크라이나어 선택 시 uk 피드백 (없으면 영어 폴백)
+    const useUk = isUk();
+    const sArr = (useUk && Array.isArray(r.strengths_uk) && r.strengths_uk.length) ? r.strengths_uk : (r.strengths || []);
+    const iArr = (useUk && Array.isArray(r.issues_uk) && r.issues_uk.length) ? r.issues_uk : (r.issues || []);
+    const cmt = (useUk && r.comment_uk) ? r.comment_uk : (r.comment || "");
+    const strengths = sArr.map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+    const issues = iArr.map((s) => `<li>${escapeHtml(s)}</li>`).join("");
     el.innerHTML =
       `<p class="r-title">${STATUS_ICON[r.status] || ICON.pending} ${STATUS[r.status] || r.status} · ${r.score}${r.max_score ? ` / ${r.max_score}` : ""} ${t("pts")}</p>
-       <p class="r-comment">${escapeHtml(r.comment || "")}</p>
-       ${strengths ? `<p class="r-comment"><b>${t("res_strengths")}</b><ul>${strengths}</ul></p>` : ""}
-       ${issues ? `<p class="r-comment"><b>${t("res_tofix")}</b><ul>${issues}</ul></p>` : ""}`;
+       <p class="r-comment">${escapeHtml(cmt)}</p>
+       ${strengths ? `<div class="r-comment"><b>${t("res_strengths")}</b><ul>${strengths}</ul></div>` : ""}
+       ${issues ? `<div class="r-comment"><b>${t("res_tofix")}</b><ul>${issues}</ul></div>` : ""}`;
   });
 }
 function showSummary(obj) {

@@ -33,7 +33,8 @@ For each item return:
 - strengths: short bullet strings
 - issues: short bullet strings (empty array if none)
 - comment: one or two sentences of overall feedback
-- confidence: 0.0–1.0`;
+- confidence: 0.0–1.0
+- strengths_uk / issues_uk / comment_uk: Ukrainian translations of strengths / issues / comment for the student. Translate the prose into natural Ukrainian, but NEVER translate or alter code: anything in backticks, Python identifiers/functions (input, print, range, etc.), string literals, numbers-as-code, and operators must stay exactly as in the English version.`;
 
 const RESULT_SCHEMA = {
   type: "object",
@@ -52,8 +53,11 @@ const RESULT_SCHEMA = {
           issues: { type: "array", items: { type: "string" } },
           comment: { type: "string" },
           confidence: { type: "number" },
+          strengths_uk: { type: "array", items: { type: "string" } },
+          issues_uk: { type: "array", items: { type: "string" } },
+          comment_uk: { type: "string" },
         },
-        required: ["index", "status", "score", "strengths", "issues", "comment", "confidence"],
+        required: ["index", "status", "score", "strengths", "issues", "comment", "confidence", "strengths_uk", "issues_uk", "comment_uk"],
       },
     },
   },
@@ -216,6 +220,9 @@ export default async function handler(req, res) {
               strengths: r.strengths || [],
               issues: r.issues || [],
               comment: r.comment || "",
+              strengths_uk: r.strengths_uk || [],
+              issues_uk: r.issues_uk || [],
+              comment_uk: r.comment_uk || "",
               confidence: r.confidence ?? null,
               raw_response: r,
             });
@@ -233,6 +240,9 @@ export default async function handler(req, res) {
             strengths: r.strengths || [],
             issues: r.issues || [],
             comment: r.comment || "",
+            strengths_uk: r.strengths_uk || [],
+            issues_uk: r.issues_uk || [],
+            comment_uk: r.comment_uk || "",
             confidence: r.confidence ?? null,
           });
         }

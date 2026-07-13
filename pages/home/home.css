@@ -182,6 +182,11 @@ div.asn-card:not(.asn-card--locked):hover { transform: none; }
   justify-content: flex-start;
   padding-top: clamp(52px, 6.5vw, 70px);
 }
+/* 짧은 카드(보너스/미공개)도 긴 UK 배지가 상단을 침범하지 않게 여백 확보 */
+.asn-card--bonus,
+.asn-card--locked {
+  padding-top: clamp(52px, 6.5vw, 70px);
+}
 
 /* ---------- Completed = neon green (Home_2) ---------- */
 
