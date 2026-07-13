@@ -9,6 +9,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 16px clamp(16px, 3vw, 40px);
 }
@@ -120,6 +121,7 @@
   font-size: 0.72rem;
   letter-spacing: 0.03em;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 .asn-badge--done { background: rgba(0,0,0,0.35); color: var(--green); border-color: var(--green-line); }
 .asn-badge--progress { background: rgba(0,0,0,0.30); color: #ffe58a; border-color: rgba(255,210,30,.5); }

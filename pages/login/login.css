@@ -6,14 +6,19 @@
 .login-card {
   width: min(92vw, 720px);
   padding: clamp(28px, 4.5vw, 52px) clamp(20px, 3.2vw, 40px);
-  display: flex;
-  flex-direction: column;
-  gap: clamp(22px, 3vw, 38px);
+  display: grid;
+  grid-template-columns: max-content 1fr;   /* 라벨 = 내용 폭, 입력 = 나머지 */
+  align-items: center;
+  column-gap: clamp(14px, 2vw, 22px);
+  row-gap: clamp(22px, 3vw, 38px);
 }
+/* 각 행의 라벨/입력을 카드 그리드에 직접 배치해 두 행의 입력 시작점을 정렬 */
+.login-card .field-row { display: contents; }
+.login-card .login-error,
+.login-card > button { grid-column: 1 / -1; }
 
 .login-error { margin: -8px 4px 0; }
 
 @media (max-width: 460px) {
-  .field-label { width: 52px; }
   .field-input { padding-right: 52px; }
 }

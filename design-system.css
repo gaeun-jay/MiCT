@@ -164,14 +164,15 @@ button.pill:focus-visible { outline: 2px solid var(--green); outline-offset: 2px
 
 .field-label {
   flex: 0 0 auto;
-  width: clamp(60px, 9vw, 96px);
+  width: auto;                       /* 내용 폭 (그리드 정렬) — 긴 라벨도 입력창을 침범하지 않음 */
   font-weight: 900;
-  font-size: clamp(26px, 4.2vw, 44px);
+  font-size: clamp(22px, 3.4vw, 38px);
   line-height: 1;
   letter-spacing: 0.02em;
   color: var(--white);
   text-shadow: 0 2px 8px rgba(0,0,0,.35);
   user-select: none;
+  white-space: nowrap;
 }
 
 .field-control { position: relative; flex: 1 1 auto; min-width: 0; }
