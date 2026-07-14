@@ -9,7 +9,7 @@
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="../admin.css?v=2" />
+    <link rel="stylesheet" href="../admin.css?v=3" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
@@ -63,7 +63,7 @@
             <div class="section">
               <h2 class="section-title">학생 계정 관리</h2>
               <p class="section-desc">
-                학생은 <b>회원가입 페이지</b>에서 직접 계정을 만듭니다. 여기서는 학생 목록 확인·이름 수정·비밀번호 재발급을 합니다.
+                학생은 <b>회원가입 페이지</b>에서 직접 계정을 만듭니다. 여기서는 학생 목록 확인·이름 수정·비밀번호 재발급·계정 삭제를 합니다.
               </p>
             </div>
 
@@ -86,7 +86,7 @@
                         <th>이름</th>
                         <th>나이대</th>
                         <th>마지막 로그인 일시</th>
-                        <th>비밀번호 재발급</th>
+                        <th>관리</th>
                       </tr>
                     </thead>
                     <tbody id="studentTbody"></tbody>
@@ -294,6 +294,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../../../supabase-config.js"></script>
-    <script src="dashboard.js?v=9"></script>
+    <script src="dashboard.js?v=10"></script>
   </body>
 </html>

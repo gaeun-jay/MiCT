@@ -207,7 +207,10 @@ function renderStudents() {
       <td>${s.age_group || "-"}</td>
       <td class="muted">${s.last_login_at ? new Date(s.last_login_at).toLocaleString("ko-KR") : "-"}</td>
       <td>
-        <button class="btn btn-sm reissue-btn" data-code="${s.student_code}" data-name="${escAttr(s.name)}">재발급</button>
+        <div class="row-actions">
+          <button class="btn btn-sm reissue-btn" data-code="${s.student_code}" data-name="${escAttr(s.name)}">재발급</button>
+          <button class="btn btn-sm delete-btn" data-code="${s.student_code}" data-name="${escAttr(s.name)}">삭제</button>
+        </div>
       </td>`;
     studentTbody.appendChild(tr);
   });
@@ -263,6 +266,36 @@ studentTbody.addEventListener("click", async (e) => {
     if (!resp.ok) { alert("재발급 실패: " + (data.error || resp.status)); return; }
     alert(`비밀번호 재발급 완료\n아이디: ${code}\n새 임시 비밀번호: ${data.password}\n\n이 비밀번호를 학생에게 전달하세요. (첫 로그인 시 변경됩니다.)`);
     await loadStudents();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
+
+// 학생 삭제 → /api/delete-student (계정 + 학습 데이터 영구 삭제)
+studentTbody.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".delete-btn");
+  if (!btn) return;
+  const code = btn.dataset.code;
+  const name = btn.dataset.name || "";
+  if (!confirm(`${code} (${name})\n\n이 학생 계정과 모든 학습 데이터(과제·답안·채점)를 영구 삭제합니다.\n되돌릴 수 없습니다. 삭제할까요?`)) return;
+
+  const token = await getToken();
+  if (!token) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); return; }
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "…";
+  try {
+    const resp = await fetch(`${API_BASE}/api/delete-student`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ student_code: code }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) { alert("삭제 실패: " + (data.error || resp.status)); return; }
+    if (data.warning) alert("삭제 처리됨(경고): " + data.warning);
+    await loadStudents();
+    if (typeof loadAnalytics === "function") await loadAnalytics();  // 학습현황/리포트 갱신
   } finally {
     btn.disabled = false;
     btn.textContent = orig;
