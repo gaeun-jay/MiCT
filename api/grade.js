@@ -160,13 +160,18 @@ export default async function handler(req, res) {
       const isOwner = asg.students?.auth_user_id === userId;
       if (!isOwner && !isAdmin) return res.status(403).json({ error: "Not your assignment." });
 
+      // question_ids 가 오면 그 문항만 재채점 (관리자가 특정 문제만 다시 채점) — 총점은 전체 코드답안 기준 재계산
+      const onlyQids = Array.isArray(body.question_ids) && body.question_ids.length ? body.question_ids : null;
+      if (onlyQids && !isAdmin) return res.status(403).json({ error: "Admin only for partial re-grade." });
+
       // 코드 문제 + 학생 답안 로드
-      const { data: cq } = await admin
+      let cqQuery = admin
         .from("questions")
         .select("id, question_text, requirements, rubric, concept, max_score")
         .eq("question_set_id", asg.question_set_id)
-        .eq("question_type", "code")
-        .order("question_number");
+        .eq("question_type", "code");
+      if (onlyQids) cqQuery = cqQuery.in("id", onlyQids);
+      const { data: cq } = await cqQuery.order("question_number");
 
       const codeQs = cq || [];
       const { data: ansRows } = await admin
@@ -249,16 +254,39 @@ export default async function handler(req, res) {
       }
 
       // 과제 최종 처리
+      //  · 전체 코드 답안 점수 합으로 code_score 재계산 (부분 재채점이어도 총점 일관성 유지)
+      //  · status 는 이 과제의 전체 code_feedback 기준으로 판정
       const objective = asg.objective_score || 0;
+      let finalCodeScore = codeScore;
+      let finalReview = anyReview;
+      if (onlyQids) {
+        const { data: allCodeQs } = await admin
+          .from("questions").select("id")
+          .eq("question_set_id", asg.question_set_id).eq("question_type", "code");
+        const codeIds = (allCodeQs || []).map((q) => q.id);
+        if (codeIds.length) {
+          const { data: codeAns } = await admin
+            .from("answers").select("id, score")
+            .eq("assignment_id", assignmentId).in("question_id", codeIds);
+          finalCodeScore = (codeAns || []).reduce((a, r) => a + (Number(r.score) || 0), 0);
+          const ansIds = (codeAns || []).map((r) => r.id);
+          if (ansIds.length) {
+            const { data: fbs } = await admin
+              .from("code_feedback")
+              .select("status, admin_override_status").in("answer_id", ansIds);
+            finalReview = (fbs || []).some((f) => (f.admin_override_status || f.status) === "manual_review");
+          }
+        }
+      }
       await admin.from("assignments").update({
-        code_score: codeScore,
-        total_score: objective + codeScore,
-        status: anyReview ? "manual_review" : "graded",
+        code_score: finalCodeScore,
+        total_score: objective + finalCodeScore,
+        status: finalReview ? "manual_review" : "graded",
         graded_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("id", assignmentId);
 
-      return res.status(200).json({ results, model: usedModel, code_score: codeScore });
+      return res.status(200).json({ results, model: usedModel, code_score: finalCodeScore });
     }
 
     // ---------------- 모드 2: stateless items (테스트) ----------------

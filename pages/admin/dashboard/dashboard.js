@@ -417,6 +417,7 @@ function renderProblemGrid() {
           <div class="pi-actions">
             <button class="btn ${pub ? "" : "btn-primary"}" data-toggle="${c.id}" data-pub="${pub}">${pub ? "비공개로" : "공개하기"}</button>
             <label class="btn file-btn">${uploadIcon} MD 업로드<input type="file" accept=".md,.markdown,.txt" data-parse="${key}" /></label>
+            ${cnt && cnt.total ? `<button class="btn" data-edit-class="${c.id}" data-class-no="${c.class_number}">문제 편집</button>` : ""}
             ${parsed ? `<button class="btn" data-preview="${key}">미리보기</button>` : ""}
           </div>
         </div>
@@ -812,6 +813,9 @@ problemGrid.addEventListener("click", async (e) => {
   const pv = e.target.closest("button[data-preview]");
   if (pv) { showPreview(pv.dataset.preview); return; }
 
+  const ed = e.target.closest("button[data-edit-class]");
+  if (ed) { openProblemEditor(ed.dataset.editClass, ed.dataset.classNo); return; }
+
   const bt = e.target.closest("button[data-bonus-toggle]");
   if (bt) {
     const on = bt.dataset.bonusToggle === "on";
@@ -874,37 +878,67 @@ function renderStats() {
   document.getElementById("statusClassLabel").textContent = classLabel(currentClassId);
 }
 
+const DIFF_ORDER = { easy: 0, medium: 1, hard: 2 };
+
 function renderStatusTable() {
   const tbody = document.getElementById("statusTbody");
   const rows = assignmentsForClass(currentClassId);
-  const byStu = {};
-  rows.forEach((r) => { byStu[r.student_id] = r; }); // (학생×수업) 대체로 1건
 
   if (!anStudents.length) {
     tbody.innerHTML = `<tr><td colspan="7" class="muted">데이터를 불러오는 중이거나 학생이 없습니다.</td></tr>`;
     return;
   }
-  tbody.innerHTML = anStudents
-    .map((s) => {
-      const a = byStu[s.id];
-      const done = a && (a.status === "graded" || a.status === "manual_review");
-      const inProgress = a && !done && a.status && a.status !== "not_started";
-      const diff = a?.difficulty;
-      const statusBadge = done ? "badge-green" : inProgress ? "badge-amber" : "badge-gray";
-      const statusText = done ? "완료" : inProgress ? "진행중" : "미시작";
+
+  // 학생별 시도 묶기 — (학생 × 난이도)로 각각 별도 행. 하·상 둘 다 풀면 둘 다 표시.
+  const byStu = {};
+  rows.forEach((r) => { (byStu[r.student_id] ||= []).push(r); });
+
+  const html = anStudents.map((s) => {
+    const attempts = (byStu[s.id] || []).slice().sort(
+      (a, b) => (DIFF_ORDER[a.difficulty] ?? 9) - (DIFF_ORDER[b.difficulty] ?? 9)
+    );
+    if (!attempts.length) {
+      // 미시작
       return `
       <tr>
         <td><strong>${s.student_code}</strong></td>
         <td>${escHtml(s.name)}</td>
+        <td>-</td>
+        <td><span class="badge badge-gray">미시작</span></td>
+        <td>-</td><td>-</td><td class="muted">-</td>
+      </tr>`;
+    }
+    return attempts.map((a) => {
+      const done = a.status === "graded" || a.status === "manual_review";
+      const inProgress = !done && a.status && a.status !== "not_started";
+      const diff = a.difficulty;
+      const statusBadge = a.status === "manual_review" ? "badge-amber"
+        : done ? "badge-green" : inProgress ? "badge-amber" : "badge-gray";
+      const statusText = a.status === "manual_review" ? "검토필요"
+        : done ? "완료" : inProgress ? "진행중" : "미시작";
+      const canView = a.status && a.status !== "not_started";
+      return `
+      <tr class="${canView ? "row-click" : ""}" ${canView ? `data-asg-id="${a.id}"` : ""}>
+        <td>${canView ? `<span class="cell-link">${s.student_code}</span>` : `<strong>${s.student_code}</strong>`}</td>
+        <td>${escHtml(s.name)}</td>
         <td>${diff ? `<span class="badge ${DIFF_BADGE[diff]}">${DIFF_KO[diff]}</span>` : "-"}</td>
         <td><span class="badge ${statusBadge}">${statusText}</span></td>
         <td>${done && Number.isFinite(a.total_score) ? a.total_score : "-"}</td>
-        <td>${a ? fmtMin(a.total_duration_seconds) : "-"}</td>
-        <td class="muted">${fmtDateTime(a?.submitted_at)}</td>
+        <td>${fmtMin(a.total_duration_seconds)}</td>
+        <td class="muted">${fmtDateTime(a.submitted_at)}</td>
       </tr>`;
-    })
-    .join("");
+    }).join("");
+  }).join("");
+
+  tbody.innerHTML = html;
 }
+
+// 제출현황 행 클릭 → 풀이 열람 모달
+document.getElementById("statusTbody").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr.row-click");
+  if (!tr || !tr.dataset.asgId) return;
+  openSolutionViewer(tr.dataset.asgId);
+});
 
 // 수업 선택 탭
 document.getElementById("classTabs").addEventListener("click", (e) => {
@@ -1327,4 +1361,680 @@ function buildReport(studentIds, metricsByStu, analyses, lang, data) {
 
   md += `_${L.footer}_\n`;
   return md;
+}
+
+/* =========================================================
+   (D) 학생 풀이 열람 + 점수 수정 / 문제 편집 + 문항별 재채점
+   ========================================================= */
+const OBJ_TYPES = new Set(["ox", "multiple_choice", "blank"]);
+const TYPE_LABEL2 = { ox: "OX", multiple_choice: "객관식", blank: "빈칸", code: "코드", matching: "선긋기" };
+const CODE_STATUS_KO = { correct: "정답", needs_revision: "수정 필요", manual_review: "검토 필요", pending_ai_review: "AI 채점 대기" };
+
+// 객관식/OX/빈칸 정오 판정 (DB grade_objective 로직과 동일). code/matching → null
+function isObjectiveCorrect(q, ans) {
+  const ca = q.correct_answers;
+  if (!ans) return false;
+  if (q.question_type === "ox") {
+    return String(ans.answer_text ?? "").toUpperCase() === String(ca ?? "").toUpperCase();
+  }
+  if (q.question_type === "multiple_choice") {
+    return ans.selected_choice != null && Number(ans.selected_choice) === Number(ca);
+  }
+  if (q.question_type === "blank") {
+    const arr = Array.isArray(ca) ? ca : (ca != null ? [ca] : []);
+    const t = String(ans.answer_text ?? "").trim().toLowerCase();
+    return t !== "" && arr.some((e) => String(e).trim().toLowerCase() === t);
+  }
+  return null;
+}
+
+// 과제 총점 재계산 (answers.score 합계 기준). 채점 문항만 바뀌어도 총점 일관성 유지.
+async function recomputeAssignmentTotals(assignmentId) {
+  const { data: asg } = await window.sb.from("assignments")
+    .select("id, bonus_topic_id").eq("id", assignmentId).single();
+  if (!asg) return;
+  const { data: ans } = await window.sb.from("answers")
+    .select("question_id, score, is_correct").eq("assignment_id", assignmentId);
+  const rows = ans || [];
+  const qids = rows.map((a) => a.question_id);
+  const typeById = {};
+  if (qids.length) {
+    const { data: qs } = await window.sb.from("questions")
+      .select("id, question_type").in("id", qids);
+    (qs || []).forEach((q) => { typeById[q.id] = q.question_type; });
+  }
+  if (asg.bonus_topic_id) {
+    const total = rows.length;
+    const ok = rows.filter((a) => a.is_correct).length;
+    const score = total ? Math.round((ok / total) * 100) : 0;
+    await window.sb.from("assignments")
+      .update({ objective_score: ok, total_score: score, updated_at: new Date().toISOString() })
+      .eq("id", assignmentId);
+  } else {
+    let obj = 0, code = 0;
+    rows.forEach((a) => {
+      const s = Number(a.score) || 0;
+      if (typeById[a.question_id] === "code") code += s; else obj += s;
+    });
+    await window.sb.from("assignments")
+      .update({ objective_score: obj, code_score: code, total_score: obj + code, updated_at: new Date().toISOString() })
+      .eq("id", assignmentId);
+  }
+}
+
+// 특정 필드들을 우크라이나어로 번역 (실패해도 조용히 빈 map 반환)
+async function translateFields(items) {
+  if (!items.length) return {};
+  const token = await getToken();
+  if (!token) return {};
+  try {
+    const resp = await fetch(`${API_BASE}/api/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ items, target: "uk" }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return {};
+    const map = {};
+    (data.translations || []).forEach((t) => { map[t.key] = t.text; });
+    return map;
+  } catch { return {}; }
+}
+
+/* ---------------- 모달 공통 ---------------- */
+function openModal(id) { document.getElementById(id).hidden = false; document.body.style.overflow = "hidden"; }
+function closeModal(id) { document.getElementById(id).hidden = true; document.body.style.overflow = ""; }
+["viewerBackdrop", "editorBackdrop"].forEach((id) => {
+  const bd = document.getElementById(id);
+  bd.addEventListener("click", (e) => { if (e.target === bd) closeModal(id); });
+});
+document.getElementById("viewerClose").addEventListener("click", () => closeModal("viewerBackdrop"));
+document.getElementById("viewerCancel").addEventListener("click", () => closeModal("viewerBackdrop"));
+document.getElementById("editorClose").addEventListener("click", () => closeModal("editorBackdrop"));
+document.getElementById("editorCloseBtn").addEventListener("click", () => closeModal("editorBackdrop"));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!document.getElementById("viewerBackdrop").hidden) closeModal("viewerBackdrop");
+  else if (!document.getElementById("editorBackdrop").hidden) closeModal("editorBackdrop");
+});
+
+/* =========================================================
+   풀이 열람 뷰어
+   ========================================================= */
+let viewerState = null;
+
+async function openSolutionViewer(assignmentId) {
+  const body = document.getElementById("viewerBody");
+  document.getElementById("viewerNote").textContent = "";
+  body.innerHTML = `<p class="muted">불러오는 중…</p>`;
+  openModal("viewerBackdrop");
+
+  try {
+    const { data: asg, error: aErr } = await window.sb.from("assignments")
+      .select("id, student_id, class_id, bonus_topic_id, question_set_id, difficulty, status, objective_score, code_score, total_score, total_duration_seconds, submitted_at")
+      .eq("id", assignmentId).single();
+    if (aErr || !asg) throw new Error(aErr?.message || "과제를 찾지 못했습니다.");
+
+    let questions = [];
+    if (asg.bonus_topic_id) {
+      const { data: bset } = await window.sb.from("bonus_question_sets")
+        .select("id").eq("bonus_topic_id", asg.bonus_topic_id).eq("is_active", true).limit(1);
+      const bsetId = bset?.[0]?.id;
+      if (bsetId) {
+        const { data: qs } = await window.sb.from("questions").select("*")
+          .eq("bonus_question_set_id", bsetId).order("question_number");
+        questions = qs || [];
+      }
+    } else if (asg.question_set_id) {
+      const { data: qs } = await window.sb.from("questions").select("*")
+        .eq("question_set_id", asg.question_set_id).order("question_number");
+      questions = qs || [];
+    }
+
+    const { data: answers } = await window.sb.from("answers").select("*").eq("assignment_id", assignmentId);
+    const ansByQid = {};
+    (answers || []).forEach((a) => { ansByQid[a.question_id] = a; });
+    const ansIds = (answers || []).map((a) => a.id);
+    const fbByAns = {};
+    if (ansIds.length) {
+      const { data: fbs } = await window.sb.from("code_feedback").select("*").in("answer_id", ansIds);
+      (fbs || []).forEach((f) => { fbByAns[f.answer_id] = f; });
+    }
+
+    viewerState = { assignmentId, assignment: asg, questions, ansByQid, fbByAns, isBonus: !!asg.bonus_topic_id };
+    renderViewer();
+  } catch (err) {
+    body.innerHTML = `<p class="muted">불러오기 실패: ${escHtml(err.message)}</p>`;
+  }
+}
+
+function studentAnsDisplay(q, a) {
+  if (!a) return `<span class="muted">(무응답)</span>`;
+  if (q.question_type === "ox") return `<b>${escHtml(a.answer_text || "")}</b>` || "-";
+  if (q.question_type === "multiple_choice") {
+    if (a.selected_choice == null) return `<span class="muted">(무응답)</span>`;
+    const ch = Array.isArray(q.choices) ? q.choices[a.selected_choice - 1] : null;
+    return `<b>#${a.selected_choice}</b>${ch ? ` ${escHtml(ch)}` : ""}`;
+  }
+  if (q.question_type === "blank") return a.answer_text ? `<b>${escHtml(a.answer_text)}</b>` : `<span class="muted">(무응답)</span>`;
+  if (q.question_type === "code") return a.answer_text ? `<pre class="sv-code">${escHtml(a.answer_text)}</pre>` : `<span class="muted">(무응답)</span>`;
+  if (q.question_type === "matching") return `<code>${escHtml(a.answer_text || "")}</code>`;
+  return escHtml(a.answer_text || "");
+}
+function correctAnsDisplay(q) {
+  const ca = q.correct_answers;
+  if (q.question_type === "ox") return `<b>${escHtml(String(ca ?? ""))}</b>`;
+  if (q.question_type === "multiple_choice") {
+    const ch = Array.isArray(q.choices) ? q.choices[Number(ca) - 1] : null;
+    return `<b>#${escHtml(String(ca ?? ""))}</b>${ch ? ` ${escHtml(ch)}` : ""}`;
+  }
+  if (q.question_type === "blank") return `<b>${escHtml(Array.isArray(ca) ? ca.join(", ") : String(ca ?? ""))}</b>`;
+  if (q.question_type === "code") return `<span class="muted">AI 평가 (루브릭)</span>`;
+  if (q.question_type === "matching") return `<code>${escHtml(JSON.stringify(ca ?? ""))}</code>`;
+  return "-";
+}
+
+function renderViewer() {
+  const { assignment: asg, questions, ansByQid, fbByAns } = viewerState;
+  const s = anStuById[asg.student_id] || {};
+  const clsLabel = asg.bonus_topic_id ? "Bonus" : classLabel(asg.class_id);
+  const diffLabel = asg.difficulty ? DIFF_KO[asg.difficulty] : "-";
+  document.getElementById("viewerTitle").textContent = `${s.student_code || ""} · ${s.name || ""}`.trim();
+  document.getElementById("viewerSub").textContent =
+    `${clsLabel} · 난이도 ${diffLabel} · 상태 ${STATUS_KO[asg.status] || asg.status || "-"} · 제출 ${fmtDateTime(asg.submitted_at)}`;
+
+  const totals = `
+    <div class="sv-totals">
+      <div>총점 <b>${Number.isFinite(asg.total_score) ? asg.total_score : "-"}</b></div>
+      <div>객관식 <b>${Number.isFinite(asg.objective_score) ? asg.objective_score : "-"}</b></div>
+      <div>코드 <b>${Number.isFinite(asg.code_score) ? asg.code_score : "-"}</b></div>
+      <div>풀이시간 <b>${fmtMin(asg.total_duration_seconds)}</b></div>
+    </div>`;
+
+  const qHtml = questions.map((q) => {
+    const a = ansByQid[q.id];
+    const fb = a ? fbByAns[a.id] : null;
+    const correct = a?.is_correct;
+    const cls = correct === true ? "ok" : correct === false ? "wrong" : "";
+    const maxS = q.max_score ?? 1;
+
+    let scoreControls;
+    if (q.question_type === "code") {
+      const curScore = fb?.admin_override_score ?? a?.score ?? fb?.score ?? 0;
+      const curStatus = fb?.admin_override_status ?? fb?.status ?? "manual_review";
+      const cmt = fb?.admin_override_comment ?? "";
+      const aiInfo = fb ? `<div class="sv-fb"><b>AI 채점:</b> ${CODE_STATUS_KO[fb.status] || fb.status || "-"} · ${fb.score ?? "-"}점 ${fb.comment ? `· ${escHtml(fb.comment)}` : ""}
+        ${Array.isArray(fb.issues) && fb.issues.length ? `<ul>${fb.issues.map((x) => `<li>${escHtml(String(x))}</li>`).join("")}</ul>` : ""}</div>` : `<div class="sv-fb muted">AI 채점 결과 없음</div>`;
+      scoreControls = `${aiInfo}
+        <div class="sv-score" data-qid="${q.id}" data-type="code" data-answer-id="${a?.id || ""}">
+          <span class="muted">수동 점수</span>
+          <input type="number" class="score-in" min="0" max="${maxS}" step="1" value="${curScore}" />
+          <span class="muted">/ ${maxS}</span>
+          <select class="ov-status">
+            ${["correct", "needs_revision", "manual_review"].map((v) => `<option value="${v}" ${v === curStatus ? "selected" : ""}>${CODE_STATUS_KO[v]}</option>`).join("")}
+          </select>
+          <button class="btn btn-sm" data-regrade-code="${q.id}">AI 다시 채점</button>
+          <textarea class="sv-override-cmt" placeholder="관리자 코멘트 (선택)">${escHtml(cmt)}</textarea>
+        </div>`;
+    } else if (OBJ_TYPES.has(q.question_type)) {
+      const curScore = a?.score ?? 0;
+      scoreControls = `
+        <div class="sv-score" data-qid="${q.id}" data-type="${q.question_type}" data-answer-id="${a?.id || ""}" data-max="${maxS}">
+          <span class="muted">점수</span>
+          <input type="number" class="score-in" min="0" max="${maxS}" step="1" value="${curScore}" />
+          <span class="muted">/ ${maxS}</span>
+          <span class="muted">${correct === true ? "· 정답" : correct === false ? "· 오답" : ""}</span>
+        </div>`;
+    } else {
+      scoreControls = "";
+    }
+
+    return `
+      <div class="sv-q ${cls}">
+        <div class="sv-q-head">
+          <span class="q-no">Q${q.question_number}</span>
+          <span class="badge badge-gray">${TYPE_LABEL2[q.question_type] || q.question_type}</span>
+        </div>
+        <p class="sv-q-text">${escHtml(q.question_text || "")}</p>
+        <div class="sv-row"><span class="lbl">학생 답</span><span class="val">${studentAnsDisplay(q, a)}</span></div>
+        ${q.question_type === "code" ? "" : `<div class="sv-row"><span class="lbl">정답</span><span class="val">${correctAnsDisplay(q)}</span></div>`}
+        ${scoreControls}
+      </div>`;
+  }).join("");
+
+  document.getElementById("viewerBody").innerHTML = totals + (qHtml || `<p class="muted">문항이 없습니다.</p>`);
+}
+
+// 코드 문항 "AI 다시 채점"
+document.getElementById("viewerBody").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-regrade-code]");
+  if (!btn) return;
+  const qid = btn.dataset.regradeCode;
+  if (!confirm("이 코드 문항만 AI로 다시 채점합니다. 계속할까요?")) return;
+  const token = await getToken();
+  if (!token) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); return; }
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "…";
+  try {
+    const resp = await fetch(`${API_BASE}/api/grade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ assignment_id: viewerState.assignmentId, question_ids: [qid] }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) { alert("재채점 실패: " + (data.error || resp.status)); return; }
+    await openSolutionViewer(viewerState.assignmentId); // 새로고침
+    await loadAnalytics();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
+
+// 점수 저장
+document.getElementById("viewerSave").addEventListener("click", async (ev) => {
+  if (!viewerState) return;
+  const note = document.getElementById("viewerNote");
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = "저장 중…";
+  note.textContent = "";
+  try {
+    const { data: { user } } = await window.sb.auth.getUser();
+    const rows = [...document.querySelectorAll("#viewerBody .sv-score")];
+    for (const el of rows) {
+      const qid = el.dataset.qid;
+      const type = el.dataset.type;
+      let answerId = el.dataset.answerId || null;
+      const scoreInput = el.querySelector(".score-in");
+      const score = Math.max(0, Math.round(Number(scoreInput.value) || 0));
+
+      // 답안 행이 없으면 생성 (수동 채점 대상)
+      if (!answerId) {
+        const { data: ins } = await window.sb.from("answers")
+          .insert({ assignment_id: viewerState.assignmentId, question_id: qid })
+          .select("id").single();
+        answerId = ins?.id;
+        if (!answerId) continue;
+      }
+
+      if (type === "code") {
+        const status = el.querySelector(".ov-status")?.value || "manual_review";
+        const cmt = el.querySelector(".sv-override-cmt")?.value?.trim() || null;
+        // code_feedback override (있으면 update, 없으면 insert)
+        const { data: existing } = await window.sb.from("code_feedback")
+          .select("id").eq("answer_id", answerId).limit(1);
+        const payload = {
+          admin_override_score: score, admin_override_status: status, admin_override_comment: cmt,
+          reviewed_by: user?.id || null, reviewed_at: new Date().toISOString(),
+        };
+        if (existing && existing.length) {
+          await window.sb.from("code_feedback").update(payload).eq("id", existing[0].id);
+        } else {
+          await window.sb.from("code_feedback").insert({ answer_id: answerId, status, score, ...payload });
+        }
+        await window.sb.from("answers")
+          .update({ score, is_correct: status === "correct", updated_at: new Date().toISOString() })
+          .eq("id", answerId);
+      } else {
+        const maxS = Number(el.dataset.max) || 1;
+        await window.sb.from("answers")
+          .update({ score, is_correct: score >= maxS, updated_at: new Date().toISOString() })
+          .eq("id", answerId);
+      }
+    }
+
+    await recomputeAssignmentTotals(viewerState.assignmentId);
+    await loadAnalytics();
+    note.textContent = "저장되었습니다.";
+    await openSolutionViewer(viewerState.assignmentId); // 갱신된 총점 반영
+  } catch (err) {
+    note.textContent = "저장 실패: " + (err.message || err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
+
+/* =========================================================
+   문제 편집기
+   ========================================================= */
+let editorState = null;
+
+async function openProblemEditor(classId, classNo) {
+  const body = document.getElementById("editorBody");
+  document.getElementById("editorTitle").textContent = `Class ${classNo} 문제 편집`;
+  document.getElementById("editorSub").textContent = "정답·문제·해설·루브릭을 수정하고 저장하면 다음 풀이부터 즉시 반영됩니다.";
+  body.innerHTML = `<p class="muted">불러오는 중…</p>`;
+  openModal("editorBackdrop");
+
+  try {
+    const { data: sets } = await window.sb.from("question_sets")
+      .select("id, difficulty").eq("class_id", classId).eq("is_active", true);
+    const setByDiff = {};
+    (sets || []).forEach((s) => { setByDiff[s.difficulty] = s.id; });
+    const setIds = (sets || []).map((s) => s.id);
+    let questions = [];
+    if (setIds.length) {
+      const { data: qs } = await window.sb.from("questions").select("*")
+        .in("question_set_id", setIds).order("question_number");
+      questions = qs || [];
+    }
+    const diffOfSet = {};
+    (sets || []).forEach((s) => { diffOfSet[s.id] = s.difficulty; });
+    editorState = { classId, classNo, setByDiff, diffOfSet, questions };
+    renderEditor();
+  } catch (err) {
+    body.innerHTML = `<p class="muted">불러오기 실패: ${escHtml(err.message)}</p>`;
+  }
+}
+
+const EDIT_DIFFS = ["easy", "medium", "hard"];
+function renderEditor() {
+  const { questions, setByDiff, diffOfSet } = editorState;
+  const parts = [];
+  EDIT_DIFFS.forEach((d) => {
+    const setId = setByDiff[d];
+    if (!setId) return;
+    const qs = questions.filter((q) => q.question_set_id === setId);
+    parts.push(`<div class="pe-diff-title">${DIFF_KO[d]} 난이도 <span class="badge badge-gray">${qs.length}문항</span></div>`);
+    parts.push(qs.map((q) => peQuestionHtml(q)).join(""));
+    parts.push(`<div class="pe-add-wrap"><button class="btn btn-sm" data-pe-add="${setId}">+ ${DIFF_KO[d]} 문제 추가</button></div>`);
+  });
+  document.getElementById("editorBody").innerHTML = parts.join("") || `<p class="muted">등록된 문제가 없습니다. MD 업로드로 먼저 등록하세요.</p>`;
+}
+
+function textOfLines(arr, mapper) {
+  if (!Array.isArray(arr)) return "";
+  return arr.map(mapper || ((x) => (typeof x === "string" ? x : JSON.stringify(x)))).join("\n");
+}
+function rubricToText(r) {
+  if (!Array.isArray(r)) return "";
+  return r.map((it) => {
+    const desc = it.criterion ?? it.item ?? it.description ?? Object.entries(it).find(([k]) => k !== "score")?.[1] ?? "";
+    return `${desc} | ${it.score ?? it.points ?? ""}`;
+  }).join("\n");
+}
+
+function peQuestionHtml(q) {
+  const type = q.question_type;
+  return `
+    <div class="pe-q" data-qid="${q.id || ""}" data-set-id="${q.question_set_id}">
+      <div class="pe-q-head">
+        <span class="q-no">Q<input type="number" class="qnum" value="${q.question_number ?? ""}" style="width:56px" /></span>
+        <div class="row-actions">
+          <button class="btn btn-sm btn-primary" data-pe-save>저장</button>
+          <button class="btn btn-sm delete-btn" data-pe-del>삭제</button>
+        </div>
+      </div>
+      <div class="pe-grid2">
+        <div class="pe-field">
+          <label>유형</label>
+          <select class="qtype">
+            ${["ox", "multiple_choice", "blank", "code", "matching"].map((t) => `<option value="${t}" ${t === type ? "selected" : ""}>${TYPE_LABEL2[t]}</option>`).join("")}
+          </select>
+        </div>
+        <div class="pe-field">
+          <label>배점 (max_score)</label>
+          <input type="number" class="qmax" value="${q.max_score ?? 1}" min="0" />
+        </div>
+      </div>
+      <div class="pe-field">
+        <label>문제 <span class="hint">(저장 시 우크라이나어 자동 재번역)</span></label>
+        <textarea class="qtext">${escHtml(q.question_text || "")}</textarea>
+      </div>
+      <div class="pe-typed">${peTypedFieldsHtml(q)}</div>
+      <div class="pe-field">
+        <label>오답 설명 (wrong_comment)</label>
+        <textarea class="qwc">${escHtml(q.wrong_comment || "")}</textarea>
+      </div>
+      <div class="pe-field">
+        <label>개념 (concept)</label>
+        <input type="text" class="qconcept" value="${escAttr(q.concept || "")}" />
+      </div>
+    </div>`;
+}
+
+// 유형별 정답/보기/루브릭 필드
+function peTypedFieldsHtml(q) {
+  const type = q.question_type;
+  if (type === "ox") {
+    const v = String(q.correct_answers ?? "").toUpperCase();
+    return `<div class="pe-field"><label>정답</label>
+      <select class="qans-ox"><option value="O" ${v === "O" ? "selected" : ""}>O</option><option value="X" ${v === "X" ? "selected" : ""}>X</option></select></div>`;
+  }
+  if (type === "multiple_choice") {
+    return `<div class="pe-grid2">
+      <div class="pe-field"><label>보기 <span class="hint">(한 줄에 하나)</span></label>
+        <textarea class="qchoices mono">${escHtml(textOfLines(q.choices))}</textarea></div>
+      <div class="pe-field"><label>정답 번호 <span class="hint">(1부터)</span></label>
+        <input type="number" class="qans-mc" min="1" value="${escAttr(String(q.correct_answers ?? ""))}" /></div>
+    </div>`;
+  }
+  if (type === "blank") {
+    return `<div class="pe-field"><label>정답 <span class="hint">(허용 답, 한 줄에 하나 — 대소문자·공백 무시)</span></label>
+      <textarea class="qans-blank mono">${escHtml(textOfLines(Array.isArray(q.correct_answers) ? q.correct_answers : (q.correct_answers != null ? [q.correct_answers] : [])))}</textarea></div>`;
+  }
+  if (type === "code") {
+    return `<div class="pe-field"><label>요구사항 <span class="hint">(한 줄에 하나)</span></label>
+        <textarea class="qreq mono">${escHtml(textOfLines(q.requirements))}</textarea></div>
+      <div class="pe-field"><label>루브릭 <span class="hint">(한 줄에 "기준 | 점수")</span></label>
+        <textarea class="qrubric mono">${escHtml(rubricToText(q.rubric))}</textarea></div>`;
+  }
+  if (type === "matching") {
+    return `<div class="pe-field"><label>정답 쌍 (JSON)</label>
+      <textarea class="qans-json mono">${escHtml(q.correct_answers != null ? JSON.stringify(q.correct_answers) : "")}</textarea></div>
+      <div class="pe-field"><label>보기 (choices JSON)</label>
+      <textarea class="qchoices-json mono">${escHtml(q.choices != null ? JSON.stringify(q.choices) : "")}</textarea></div>`;
+  }
+  return "";
+}
+
+// 유형 변경 시 정답 필드 영역 재렌더
+document.getElementById("editorBody").addEventListener("change", (e) => {
+  const sel = e.target.closest(".qtype");
+  if (!sel) return;
+  const qEl = sel.closest(".pe-q");
+  const typed = qEl.querySelector(".pe-typed");
+  typed.innerHTML = peTypedFieldsHtml({ question_type: sel.value });
+  qEl.classList.add("dirty");
+});
+document.getElementById("editorBody").addEventListener("input", (e) => {
+  const qEl = e.target.closest(".pe-q");
+  if (qEl) qEl.classList.add("dirty");
+});
+
+function linesToArray(text) {
+  return String(text || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
+function parseRubric(text) {
+  return linesToArray(text).map((line) => {
+    const i = line.lastIndexOf("|");
+    if (i < 0) return { criterion: line.trim(), score: 0 };
+    return { criterion: line.slice(0, i).trim(), score: Math.round(Number(line.slice(i + 1).trim()) || 0) };
+  });
+}
+
+// 폼 → question 객체
+function readPEQuestion(qEl) {
+  const type = qEl.querySelector(".qtype").value;
+  const q = {
+    id: qEl.dataset.qid || null,
+    question_set_id: qEl.dataset.setId,
+    question_number: parseInt(qEl.querySelector(".qnum").value, 10) || 1,
+    question_type: type,
+    max_score: parseInt(qEl.querySelector(".qmax").value, 10) || 1,
+    question_text: qEl.querySelector(".qtext").value.trim(),
+    wrong_comment: qEl.querySelector(".qwc").value.trim() || null,
+    concept: qEl.querySelector(".qconcept").value.trim() || null,
+    choices: null, correct_answers: null, requirements: null, rubric: null,
+  };
+  if (type === "ox") {
+    q.correct_answers = qEl.querySelector(".qans-ox").value;
+  } else if (type === "multiple_choice") {
+    q.choices = linesToArray(qEl.querySelector(".qchoices").value);
+    q.correct_answers = parseInt(qEl.querySelector(".qans-mc").value, 10) || null;
+  } else if (type === "blank") {
+    q.correct_answers = linesToArray(qEl.querySelector(".qans-blank").value);
+  } else if (type === "code") {
+    q.requirements = linesToArray(qEl.querySelector(".qreq").value);
+    q.rubric = parseRubric(qEl.querySelector(".qrubric").value);
+  } else if (type === "matching") {
+    try { q.correct_answers = JSON.parse(qEl.querySelector(".qans-json").value || "null"); } catch { throw new Error("정답 쌍 JSON 형식 오류"); }
+    try { q.choices = JSON.parse(qEl.querySelector(".qchoices-json").value || "null"); } catch { throw new Error("보기 JSON 형식 오류"); }
+  }
+  return q;
+}
+
+// 저장 / 삭제 / 추가
+document.getElementById("editorBody").addEventListener("click", async (e) => {
+  const saveBtn = e.target.closest("button[data-pe-save]");
+  const delBtn = e.target.closest("button[data-pe-del]");
+  const addBtn = e.target.closest("button[data-pe-add]");
+
+  if (addBtn) {
+    const setId = addBtn.dataset.peAdd;
+    const nums = editorState.questions.filter((q) => q.question_set_id === setId).map((q) => q.question_number || 0);
+    const nextNum = (nums.length ? Math.max(...nums) : 0) + 1;
+    const blank = { id: null, question_set_id: setId, question_number: nextNum, question_type: "ox", max_score: 1, question_text: "", correct_answers: "O" };
+    const wrap = document.createElement("div");
+    wrap.innerHTML = peQuestionHtml(blank);
+    addBtn.closest(".pe-add-wrap").insertAdjacentElement("beforebegin", wrap.firstElementChild);
+    return;
+  }
+
+  if (delBtn) {
+    const qEl = delBtn.closest(".pe-q");
+    const qid = qEl.dataset.qid;
+    if (!qid) { qEl.remove(); return; }  // 저장 안 된 새 문제
+    if (!confirm("이 문제를 삭제합니다. 되돌릴 수 없습니다.\n(이미 제출한 학생의 답안 기록도 함께 사라질 수 있습니다.)")) return;
+    delBtn.disabled = true;
+    const { error } = await window.sb.from("questions").delete().eq("id", qid);
+    if (error) { alert("삭제 실패: " + error.message); delBtn.disabled = false; return; }
+    editorState.questions = editorState.questions.filter((q) => q.id !== qid);
+    qEl.remove();
+    await loadProblemGrid();
+    return;
+  }
+
+  if (saveBtn) {
+    const qEl = saveBtn.closest(".pe-q");
+    saveBtn.disabled = true;
+    const orig = saveBtn.textContent;
+    saveBtn.textContent = "저장 중…";
+    try {
+      let q;
+      try { q = readPEQuestion(qEl); } catch (pe) { alert(pe.message); return; }
+      if (!q.question_text) { alert("문제 텍스트를 입력하세요."); return; }
+
+      // 이전 정답(재채점 필요 판단용)
+      const prev = editorState.questions.find((x) => x.id === q.id);
+      const answerKeyChanged = !prev
+        || JSON.stringify(prev.correct_answers) !== JSON.stringify(q.correct_answers)
+        || prev.question_type !== q.question_type
+        || JSON.stringify(prev.rubric) !== JSON.stringify(q.rubric)
+        || (prev.max_score ?? 1) !== (q.max_score ?? 1);
+
+      // 우크라이나어 재번역
+      const items = [{ key: "t", text: q.question_text }];
+      if (q.wrong_comment) items.push({ key: "w", text: q.wrong_comment });
+      if (q.question_type === "multiple_choice" && Array.isArray(q.choices)) {
+        q.choices.forEach((c, i) => items.push({ key: `c${i}`, text: String(c) }));
+      }
+      const tr = await translateFields(items);
+      const row = {
+        question_set_id: q.question_set_id,
+        question_number: q.question_number,
+        question_type: q.question_type,
+        question_text: q.question_text,
+        question_text_uk: tr.t ?? null,
+        choices: q.choices,
+        choices_uk: (q.question_type === "multiple_choice" && Array.isArray(q.choices))
+          ? q.choices.map((c, i) => tr[`c${i}`] ?? String(c)) : null,
+        correct_answers: q.correct_answers,
+        wrong_comment: q.wrong_comment,
+        wrong_comment_uk: q.wrong_comment ? (tr.w ?? null) : null,
+        concept: q.concept,
+        requirements: q.requirements,
+        rubric: q.rubric,
+        max_score: q.max_score,
+      };
+
+      if (q.id) {
+        const { error } = await window.sb.from("questions").update(row).eq("id", q.id);
+        if (error) throw error;
+      } else {
+        const { data: ins, error } = await window.sb.from("questions").insert(row).select("id").single();
+        if (error) throw error;
+        q.id = ins.id;
+        qEl.dataset.qid = q.id;
+      }
+
+      // editorState 갱신
+      const full = { ...row, id: q.id };
+      const idx = editorState.questions.findIndex((x) => x.id === q.id);
+      if (idx >= 0) editorState.questions[idx] = full; else editorState.questions.push(full);
+
+      qEl.classList.remove("dirty");
+
+      // 재채점 안내 (수정한 문항만)
+      if (answerKeyChanged && prev) {
+        await maybeRegradeQuestion(full);
+      }
+      await loadProblemGrid();
+      saveBtn.textContent = "저장됨 ✓";
+      setTimeout(() => { saveBtn.textContent = orig; }, 1500);
+    } catch (err) {
+      alert("저장 실패: " + (err.message || err));
+      saveBtn.textContent = orig;
+    } finally {
+      saveBtn.disabled = false;
+    }
+  }
+});
+
+// 수정한 문항만 재채점 (제출·채점된 과제 대상)
+async function maybeRegradeQuestion(q) {
+  const { data: ans } = await window.sb.from("answers").select("assignment_id").eq("question_id", q.id);
+  const asgIds = [...new Set((ans || []).map((a) => a.assignment_id))];
+  if (!asgIds.length) return;
+  const { data: asgs } = await window.sb.from("assignments").select("id, status").in("id", asgIds);
+  const targets = (asgs || []).filter((a) => ["submitted", "graded", "manual_review"].includes(a.status)).map((a) => a.id);
+  if (!targets.length) return;
+
+  if (q.question_type === "code") {
+    if (!confirm(`이 코드 문항을 이미 제출한 학생 ${targets.length}명에 대해 AI로 다시 채점할까요?\n(수정한 이 문제만 재채점됩니다.)`)) return;
+    const token = await getToken();
+    if (!token) { alert("세션 만료 — 다시 로그인해 주세요."); return; }
+    let ok = 0;
+    for (const id of targets) {
+      const resp = await fetch(`${API_BASE}/api/grade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ assignment_id: id, question_ids: [q.id] }),
+      });
+      if (resp.ok) ok++;
+    }
+    await loadAnalytics();
+    alert(`재채점 완료: ${ok}/${targets.length}명`);
+  } else if (OBJ_TYPES.has(q.question_type)) {
+    if (!confirm(`정답이 바뀌었습니다. 이미 제출한 학생 ${targets.length}명의 이 문제를 다시 채점할까요?\n(수정한 이 문제만 재채점되고 총점이 갱신됩니다.)`)) return;
+    const { data: rows } = await window.sb.from("answers")
+      .select("id, assignment_id, answer_text, selected_choice").eq("question_id", q.id);
+    const targetSet = new Set(targets);
+    const affected = new Set();
+    for (const a of (rows || [])) {
+      if (!targetSet.has(a.assignment_id)) continue;
+      const correct = isObjectiveCorrect(q, a);
+      if (correct === null) continue;
+      const score = correct ? (Number(q.max_score) || 1) : 0;
+      await window.sb.from("answers").update({ is_correct: correct, score, updated_at: new Date().toISOString() }).eq("id", a.id);
+      affected.add(a.assignment_id);
+    }
+    for (const id of affected) await recomputeAssignmentTotals(id);
+    await loadAnalytics();
+    alert(`재채점 완료: ${affected.size}명의 점수를 갱신했습니다.`);
+  }
 }
