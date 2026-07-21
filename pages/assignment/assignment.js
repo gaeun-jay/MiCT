@@ -80,6 +80,8 @@ function applyQuestionLang() {
         const span = btn.querySelector("span:last-child");
         if (span && chs[ci] != null) span.textContent = chs[ci];
       });
+      const mh = qEl.querySelector(".mc-multi-hint");
+      if (mh) mh.textContent = t("mc_pick_all");
     }
     if (q.question_type === "code") {
       const rl = qEl.querySelector(".crb-label"); if (rl) rl.textContent = t("code_run");
@@ -132,7 +134,8 @@ function renderQuestion(q, i) {
       <button type="button" class="ox-btn" data-v="X">X</button></div>`;
   } else if (q.question_type === "multiple_choice") {
     const choices = qChoices(q);
-    body = `<div class="mc-opts">${choices.map((c, ci) =>
+    const multi = !!q.multi_select;
+    body = `${multi ? `<p class="mc-multi-hint">${t("mc_pick_all")}</p>` : ""}<div class="mc-opts${multi ? " is-multi" : ""}" data-multi="${multi ? "1" : "0"}">${choices.map((c, ci) =>
       `<button type="button" class="mc-opt" data-v="${ci + 1}">
          <span class="mc-num">${ci + 1}</span><span>${escapeHtml(c)}</span></button>`).join("")}</div>`;
   } else if (q.question_type === "blank") {
@@ -167,7 +170,15 @@ qWrap.addEventListener("click", (e) => {
   const ox = e.target.closest(".ox-btn");
   if (ox) { ox.parentElement.querySelectorAll(".ox-btn").forEach((b) => b.classList.remove("is-sel")); ox.classList.add("is-sel"); }
   const mc = e.target.closest(".mc-opt");
-  if (mc) { mc.parentElement.querySelectorAll(".mc-opt").forEach((b) => b.classList.remove("is-sel")); mc.classList.add("is-sel"); }
+  if (mc) {
+    const opts = mc.parentElement;
+    if (opts.dataset.multi === "1") {
+      mc.classList.toggle("is-sel");           // 복수 정답: 여러 개 토글
+    } else {
+      opts.querySelectorAll(".mc-opt").forEach((b) => b.classList.remove("is-sel"));
+      mc.classList.add("is-sel");
+    }
+  }
 });
 
 // ---- 코드 실행 (Pyodide, Web Worker) — 학생 출력 확인용, 채점과 무관 ----
@@ -302,13 +313,19 @@ function collectAnswers() {
   document.querySelectorAll(".q").forEach((qEl) => {
     const qid = qEl.dataset.qid;
     const type = qEl.dataset.type;
-    const row = { assignment_id: assignmentId, question_id: qid, answer_text: null, selected_choice: null };
+    const row = { assignment_id: assignmentId, question_id: qid, answer_text: null, selected_choice: null, selected_choices: null };
     if (type === "ox") {
       const sel = qEl.querySelector(".ox-btn.is-sel");
       row.answer_text = sel ? sel.dataset.v : null;
     } else if (type === "multiple_choice") {
-      const sel = qEl.querySelector(".mc-opt.is-sel");
-      row.selected_choice = sel ? Number(sel.dataset.v) : null;
+      const opts = qEl.querySelector(".mc-opts");
+      const picked = [...qEl.querySelectorAll(".mc-opt.is-sel")].map((b) => Number(b.dataset.v)).sort((a, b) => a - b);
+      if (opts && opts.dataset.multi === "1") {
+        row.selected_choices = picked;            // 복수 정답
+        row.selected_choice = null;
+      } else {
+        row.selected_choice = picked.length ? picked[0] : null;
+      }
     } else if (type === "blank") {
       row.answer_text = qEl.querySelector(".blank-input")?.value?.trim() || null;
     } else if (type === "code") {
@@ -386,8 +403,11 @@ function correctText(r) {
   if (r.type === "ox") return `<b>${c}</b>`;
   if (r.type === "multiple_choice") {
     const choices = qChoices(q);
-    const n = Number(c);
-    return `<b>#${n}</b>${choices[n - 1] ? ` (${escapeHtml(choices[n - 1])})` : ""}`;
+    const arr = Array.isArray(c) ? c : [c];
+    return arr.map((v) => {
+      const n = Number(v);
+      return `<b>#${n}</b>${choices[n - 1] ? ` (${escapeHtml(choices[n - 1])})` : ""}`;
+    }).join(", ");
   }
   if (r.type === "blank") return `<b>${escapeHtml(Array.isArray(c) ? c[0] : c)}</b>`;
   return "-";

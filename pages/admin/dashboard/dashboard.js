@@ -1378,6 +1378,15 @@ function isObjectiveCorrect(q, ans) {
     return String(ans.answer_text ?? "").toUpperCase() === String(ca ?? "").toUpperCase();
   }
   if (q.question_type === "multiple_choice") {
+    if (q.multi_select || Array.isArray(ca)) {
+      const correctSet = (Array.isArray(ca) ? ca : [ca]).map(Number).sort((a, b) => a - b);
+      let selSet;
+      if (Array.isArray(ans.selected_choices)) selSet = ans.selected_choices.map(Number).sort((a, b) => a - b);
+      else if (ans.selected_choice != null) selSet = [Number(ans.selected_choice)];
+      else selSet = [];
+      return correctSet.length > 0 && correctSet.length === selSet.length
+        && correctSet.every((v, i) => v === selSet[i]);
+    }
     return ans.selected_choice != null && Number(ans.selected_choice) === Number(ca);
   }
   if (q.question_type === "blank") {
@@ -1512,9 +1521,14 @@ function studentAnsDisplay(q, a) {
   if (!a) return `<span class="muted">(무응답)</span>`;
   if (q.question_type === "ox") return `<b>${escHtml(a.answer_text || "")}</b>` || "-";
   if (q.question_type === "multiple_choice") {
-    if (a.selected_choice == null) return `<span class="muted">(무응답)</span>`;
-    const ch = Array.isArray(q.choices) ? q.choices[a.selected_choice - 1] : null;
-    return `<b>#${a.selected_choice}</b>${ch ? ` ${escHtml(ch)}` : ""}`;
+    const picks = Array.isArray(a.selected_choices) && a.selected_choices.length
+      ? a.selected_choices
+      : (a.selected_choice != null ? [a.selected_choice] : []);
+    if (!picks.length) return `<span class="muted">(무응답)</span>`;
+    return picks.map((v) => {
+      const ch = Array.isArray(q.choices) ? q.choices[v - 1] : null;
+      return `<b>#${escHtml(String(v))}</b>${ch ? ` ${escHtml(ch)}` : ""}`;
+    }).join(", ");
   }
   if (q.question_type === "blank") return a.answer_text ? `<b>${escHtml(a.answer_text)}</b>` : `<span class="muted">(무응답)</span>`;
   if (q.question_type === "code") return a.answer_text ? `<pre class="sv-code">${escHtml(a.answer_text)}</pre>` : `<span class="muted">(무응답)</span>`;
@@ -1525,8 +1539,11 @@ function correctAnsDisplay(q) {
   const ca = q.correct_answers;
   if (q.question_type === "ox") return `<b>${escHtml(String(ca ?? ""))}</b>`;
   if (q.question_type === "multiple_choice") {
-    const ch = Array.isArray(q.choices) ? q.choices[Number(ca) - 1] : null;
-    return `<b>#${escHtml(String(ca ?? ""))}</b>${ch ? ` ${escHtml(ch)}` : ""}`;
+    const arr = Array.isArray(ca) ? ca : (ca != null ? [ca] : []);
+    return arr.map((v) => {
+      const ch = Array.isArray(q.choices) ? q.choices[Number(v) - 1] : null;
+      return `<b>#${escHtml(String(v))}</b>${ch ? ` ${escHtml(ch)}` : ""}`;
+    }).join(", ") || "-";
   }
   if (q.question_type === "blank") return `<b>${escHtml(Array.isArray(ca) ? ca.join(", ") : String(ca ?? ""))}</b>`;
   if (q.question_type === "code") return `<span class="muted">AI 평가 (루브릭)</span>`;
@@ -1806,11 +1823,18 @@ function peTypedFieldsHtml(q) {
       <select class="qans-ox"><option value="O" ${v === "O" ? "selected" : ""}>O</option><option value="X" ${v === "X" ? "selected" : ""}>X</option></select></div>`;
   }
   if (type === "multiple_choice") {
+    const multi = !!q.multi_select || Array.isArray(q.correct_answers);
+    const ansStr = Array.isArray(q.correct_answers) ? q.correct_answers.join(", ") : String(q.correct_answers ?? "");
     return `<div class="pe-grid2">
       <div class="pe-field"><label>보기 <span class="hint">(한 줄에 하나)</span></label>
         <textarea class="qchoices mono">${escHtml(textOfLines(q.choices))}</textarea></div>
-      <div class="pe-field"><label>정답 번호 <span class="hint">(1부터)</span></label>
-        <input type="number" class="qans-mc" min="1" value="${escAttr(String(q.correct_answers ?? ""))}" /></div>
+      <div class="pe-field">
+        <label>정답 번호 <span class="hint">(1부터 · 복수면 쉼표, 예: 1, 3)</span></label>
+        <input type="text" class="qans-mc" value="${escAttr(ansStr)}" />
+        <label class="hint" style="display:flex;align-items:center;gap:6px;margin-top:8px;font-weight:600">
+          <input type="checkbox" class="qmulti" ${multi ? "checked" : ""} /> 복수 정답 허용 (모두 골라야 정답)
+        </label>
+      </div>
     </div>`;
   }
   if (type === "blank") {
@@ -1869,13 +1893,17 @@ function readPEQuestion(qEl) {
     question_text: qEl.querySelector(".qtext").value.trim(),
     wrong_comment: qEl.querySelector(".qwc").value.trim() || null,
     concept: qEl.querySelector(".qconcept").value.trim() || null,
-    choices: null, correct_answers: null, requirements: null, rubric: null,
+    choices: null, correct_answers: null, requirements: null, rubric: null, multi_select: false,
   };
   if (type === "ox") {
     q.correct_answers = qEl.querySelector(".qans-ox").value;
   } else if (type === "multiple_choice") {
     q.choices = linesToArray(qEl.querySelector(".qchoices").value);
-    q.correct_answers = parseInt(qEl.querySelector(".qans-mc").value, 10) || null;
+    const multi = !!qEl.querySelector(".qmulti")?.checked;
+    const nums = String(qEl.querySelector(".qans-mc").value || "")
+      .split(/[,\s]+/).map((x) => parseInt(x, 10)).filter(Number.isFinite);
+    if (multi) { q.multi_select = true; q.correct_answers = nums; }
+    else { q.correct_answers = nums.length ? nums[0] : null; }
   } else if (type === "blank") {
     q.correct_answers = linesToArray(qEl.querySelector(".qans-blank").value);
   } else if (type === "code") {
@@ -1934,6 +1962,7 @@ document.getElementById("editorBody").addEventListener("click", async (e) => {
       const answerKeyChanged = !prev
         || JSON.stringify(prev.correct_answers) !== JSON.stringify(q.correct_answers)
         || prev.question_type !== q.question_type
+        || !!prev.multi_select !== !!q.multi_select
         || JSON.stringify(prev.rubric) !== JSON.stringify(q.rubric)
         || (prev.max_score ?? 1) !== (q.max_score ?? 1);
 
@@ -1954,6 +1983,7 @@ document.getElementById("editorBody").addEventListener("click", async (e) => {
         choices_uk: (q.question_type === "multiple_choice" && Array.isArray(q.choices))
           ? q.choices.map((c, i) => tr[`c${i}`] ?? String(c)) : null,
         correct_answers: q.correct_answers,
+        multi_select: !!q.multi_select,
         wrong_comment: q.wrong_comment,
         wrong_comment_uk: q.wrong_comment ? (tr.w ?? null) : null,
         concept: q.concept,
@@ -2022,7 +2052,7 @@ async function maybeRegradeQuestion(q) {
   } else if (OBJ_TYPES.has(q.question_type)) {
     if (!confirm(`정답이 바뀌었습니다. 이미 제출한 학생 ${targets.length}명의 이 문제를 다시 채점할까요?\n(수정한 이 문제만 재채점되고 총점이 갱신됩니다.)`)) return;
     const { data: rows } = await window.sb.from("answers")
-      .select("id, assignment_id, answer_text, selected_choice").eq("question_id", q.id);
+      .select("id, assignment_id, answer_text, selected_choice, selected_choices").eq("question_id", q.id);
     const targetSet = new Set(targets);
     const affected = new Set();
     for (const a of (rows || [])) {

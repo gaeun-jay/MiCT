@@ -116,6 +116,7 @@
 .ox-btn.is-sel { border-color: #16a34a; background: #eafaf0; color: #12833c; }
 
 /* 객관식 */
+.mc-multi-hint { margin: 0 0 8px; font-size: .82rem; font-weight: 600; color: #16a34a; }
 .mc-opts { display: flex; flex-direction: column; gap: 8px; }
 .mc-opt {
   display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px;

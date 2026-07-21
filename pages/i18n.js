@@ -116,6 +116,7 @@
       err_already_submitted: "You've already submitted this difficulty. Pick another one.",
       err_load_questions: "Could not load questions.",
       answer_placeholder: "Your answer",
+      mc_pick_all: "Select all correct answers",
       // 보너스
       bonus_title: "Bonus Challenge",
       bonus_empty: "No bonus concepts are available yet. Please check back later.",
@@ -233,6 +234,7 @@
       err_already_submitted: "Ви вже здали цю складність. Виберіть іншу.",
       err_load_questions: "Не вдалося завантажити питання.",
       answer_placeholder: "Ваша відповідь",
+      mc_pick_all: "Виберіть усі правильні відповіді",
       bonus_title: "Бонусний виклик",
       bonus_empty: "Бонусних тем поки немає. Завітайте пізніше.",
       bonus_load_error: "Не вдалося завантажити теми.",

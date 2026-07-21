@@ -39,6 +39,8 @@ function correctAnswers(q) {
   switch (q.type) {
     case "ox": return q.answer ?? null;
     case "multiple_choice": {
+      // 복수 정답: answer 가 배열이거나 multi_select 이면 int 배열로 저장
+      if (Array.isArray(q.answer)) return q.answer.map((x) => parseInt(x, 10)).filter(Number.isFinite);
       const n = parseInt(q.answer, 10);
       return Number.isFinite(n) ? n : (q.answer ?? null);
     }
@@ -134,6 +136,8 @@ export default async function handler(req, res) {
         choices: q.choices ?? null,
         choices_uk: q.choices_uk ?? null,
         correct_answers: correctAnswers(q),
+        multi_select: q.type === "multiple_choice"
+          && (q.multi_select === true || String(q.multi_select).toLowerCase() === "true" || Array.isArray(q.answer)),
         wrong_comment: q.wrong_comment ?? null,
         wrong_comment_uk: q.wrong_comment_uk ?? null,
         concept: q.concept ?? (Array.isArray(q.concepts) ? q.concepts.join(",") : null),
